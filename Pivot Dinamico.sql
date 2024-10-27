@@ -1,0 +1,85 @@
+
+
+IF OBJECT_ID('tempdb..#tallas') IS NOT NULL DROP TABLE #tallas
+
+CREATE TABLE #tallas(RECEPCION VARCHAR(10), MODELO VARCHAR(10), CANTIDAD  INT, TALLA VARCHAR(2))
+
+INSERT INTO #TALLAS (RECEPCION, MODELO, CANTIDAD, TALLA)
+VALUES
+	('3101593', '0116040',0,'35'),
+	('3101593', '0116040',1,'36'),
+	('3101593', '0116040',0,'37'),
+	('3101593', '0116040',3,'38'),
+	('3101593', '0116040',5,'39'),
+	('3101593', '0116041',0,'35'),
+	('3101593', '0116041',2,'36')
+
+SELECT
+   ',' + QUOTENAME(LTRIM(TALLA))
+ FROM
+   (SELECT DISTINCT TALLA
+    FROM #tallas
+   ) AS T
+
+
+SELECT
+   ',' + QUOTENAME(LTRIM(TALLA))
+ FROM
+   (SELECT DISTINCT TALLA
+    FROM #tallas
+   ) AS T
+ ORDER BY
+ TALLA
+ FOR XML PATH('')
+
+
+ SELECT  STUFF(
+ (
+ SELECT
+   ',' + QUOTENAME(LTRIM(TALLA))
+ FROM
+   (SELECT DISTINCT TALLA
+    FROM #tallas
+   ) AS T
+ ORDER BY
+ TALLA
+ FOR XML PATH('')
+ ), 1, 1, '')
+
+
+DECLARE @columns nvarchar(MAX);
+DECLARE @sql nvarchar(MAX)
+ 
+ SELECT @columns = STUFF(
+ (
+ SELECT
+   ',' + QUOTENAME(LTRIM(TALLA))
+ FROM
+   (SELECT DISTINCT TALLA
+    FROM #tallas
+   ) AS T
+ ORDER BY
+ TALLA
+ FOR XML PATH('')
+ ), 1, 1, ''); 
+
+SET @sql = N'
+SELECT
+* 
+FROM
+(  
+SELECT RECEPCION
+        , MODELO
+        , CANTIDAD
+        , TALLA 
+FROM #tallas
+) AS T
+PIVOT   
+(
+SUM(Cantidad)
+FOR TALLA IN (' + @columns + N')
+) AS P;'
+
+EXEC sp_executesql @sql;
+
+IF OBJECT_ID('tempdb..#tallas') IS NOT NULL DROP TABLE #tallas
