@@ -1,34 +1,59 @@
-CREATE FUNCTION dbo.EncontrarNumerosCuenta (@texto VARCHAR(MAX))
-RETURNS @resultados TABLE (NumeroCuenta VARCHAR(50), Posicion INT)
+CREATE FUNCTION dbo.BuscarNumerosCuentaFormatoVariable (
+    @texto VARCHAR(MAX)
+)
+RETURNS @resultados TABLE (
+    NumeroCuenta VARCHAR(20),
+    Posicion INT,
+    Formato VARCHAR(10)
+)
 AS
 BEGIN
-    DECLARE @pos INT = 1, @len INT, @temp VARCHAR(50), @i INT = 1;
-    DECLARE @segmentos INT, @guiones INT;
+    DECLARE @i INT = 1, @len INT, @temp VARCHAR(20);
+    DECLARE @segmento1 VARCHAR(3), @segmento2 VARCHAR(7), @segmento3 VARCHAR(1);
     
     WHILE @i <= LEN(@texto)
     BEGIN
         -- Buscar inicio potencial (dígito)
         IF SUBSTRING(@texto, @i, 1) LIKE '[0-9]'
         BEGIN
-            -- Extraer segmento potencial (hasta el próximo espacio o fin de texto)
+            -- Extraer segmento potencial (hasta próximo espacio o fin)
             SET @len = CHARINDEX(' ', @texto + ' ', @i) - @i;
             IF @len < 0 SET @len = LEN(@texto) - @i + 1;
             
-            SET @temp = SUBSTRING(@texto, @i, @len);
+            SET @temp = SUBSTRING(@texto, @i, CASE WHEN @len > 20 THEN 20 ELSE @len END);
             
-            -- Verificar que solo contenga dígitos y guiones
-            IF @temp LIKE '%[0-9]%-%[0-9]%-%[0-9]%' -- Tiene dos guiones separando dígitos
-               AND @temp NOT LIKE '%[^0-9-]%'      -- No contiene otros caracteres
-               AND LEN(@temp) - LEN(REPLACE(@temp, '-', '')) = 2 -- Exactamente dos guiones
+            -- Verificar formato básico y caracteres válidos
+            IF @temp LIKE '[0-9]%-%[0-9]%-%[0-9]%' -- Tiene dos guiones separando dígitos
+               AND @temp NOT LIKE '%[^0-9-]%'      -- Solo dígitos y guiones
+               AND LEN(@temp) - LEN(REPLACE(@temp, '-', '')) = 2 -- Exactamente 2 guiones
+               AND @temp NOT LIKE '-%' AND @temp NOT LIKE '%-'   -- No empieza/termina con guión
+               AND CHARINDEX('--', @temp) = 0       -- No tiene guiones consecutivos
             BEGIN
-                -- Verificar que los guiones no estén al inicio o final
-                IF @temp NOT LIKE '-%' AND @temp NOT LIKE '%-' 
-                   AND CHARINDEX('--', @temp) = 0 -- No tiene guiones consecutivos
+                -- Extraer segmentos
+                SET @segmento1 = SUBSTRING(@temp, 1, CHARINDEX('-', @temp)-1);
+                SET @temp = SUBSTRING(@temp, CHARINDEX('-', @temp)+1, LEN(@temp));
+                SET @segmento2 = SUBSTRING(@temp, 1, CHARINDEX('-', @temp)-1);
+                SET @segmento3 = SUBSTRING(@temp, CHARINDEX('-', @temp)+1, LEN(@temp));
+                
+                -- Validar longitud máxima de cada segmento
+                IF LEN(@segmento1) <= 3  -- Primer segmento: máximo 3 dígitos
+                   AND LEN(@segmento2) <= 7 -- Segundo segmento: máximo 7 dígitos
+                   AND LEN(@segmento3) = 1  -- Tercer segmento: exactamente 1 dígito
                 BEGIN
-                    INSERT INTO @resultados
-                    VALUES (@temp, @i);
+                    -- Determinar el formato encontrado
+                    DECLARE @formato VARCHAR(10) = 
+                        CAST(LEN(@segmento1) AS VARCHAR) + '-' + 
+                        CAST(LEN(@segmento2) AS VARCHAR) + '-' + 
+                        CAST(LEN(@segmento3) AS VARCHAR);
                     
-                    SET @i = @i + @len;
+                    INSERT INTO @resultados 
+                    VALUES (
+                        @segmento1 + '-' + @segmento2 + '-' + @segmento3,
+                        @i,
+                        @formato
+                    );
+                    
+                    SET @i = @i + LEN(@segmento1) + LEN(@segmento2) + LEN(@segmento3) + 2;
                     CONTINUE;
                 END
             END
