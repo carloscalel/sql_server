@@ -2,28 +2,35 @@ CREATE FUNCTION dbo.EncontrarNumerosCuenta (@texto VARCHAR(MAX))
 RETURNS @resultados TABLE (NumeroCuenta VARCHAR(50), Posicion INT)
 AS
 BEGIN
-    DECLARE @pos INT, @len INT, @temp VARCHAR(50), @i INT = 1;
+    DECLARE @pos INT = 1, @len INT, @temp VARCHAR(50), @i INT = 1;
+    DECLARE @segmentos INT, @guiones INT;
     
     WHILE @i <= LEN(@texto)
     BEGIN
         -- Buscar inicio potencial (dígito)
         IF SUBSTRING(@texto, @i, 1) LIKE '[0-9]'
         BEGIN
-            -- Extraer segmento potencial
-            SET @temp = SUBSTRING(@texto, @i, 50);
+            -- Extraer segmento potencial (hasta el próximo espacio o fin de texto)
+            SET @len = CHARINDEX(' ', @texto + ' ', @i) - @i;
+            IF @len < 0 SET @len = LEN(@texto) - @i + 1;
             
-            -- Verificar patrón dígitos-guion-dígitos-guion-dígitos
-            IF @temp LIKE '[0-9]%-%[0-9]%-%[0-9]%'
-                AND PATINDEX('%[^0-9-]%', REPLACE(REPLACE(@temp, '-', ''), '') = 0
+            SET @temp = SUBSTRING(@texto, @i, @len);
+            
+            -- Verificar que solo contenga dígitos y guiones
+            IF @temp LIKE '%[0-9]%-%[0-9]%-%[0-9]%' -- Tiene dos guiones separando dígitos
+               AND @temp NOT LIKE '%[^0-9-]%'      -- No contiene otros caracteres
+               AND LEN(@temp) - LEN(REPLACE(@temp, '-', '')) = 2 -- Exactamente dos guiones
             BEGIN
-                -- Extraer el número de cuenta completo
-                SET @len = CHARINDEX(' ', @temp + ' ') - 1;
-                IF @len < 0 SET @len = LEN(@temp);
-                
-                INSERT INTO @resultados
-                VALUES (SUBSTRING(@temp, 1, @len), @i);
-                
-                SET @i = @i + @len;
+                -- Verificar que los guiones no estén al inicio o final
+                IF @temp NOT LIKE '-%' AND @temp NOT LIKE '%-' 
+                   AND CHARINDEX('--', @temp) = 0 -- No tiene guiones consecutivos
+                BEGIN
+                    INSERT INTO @resultados
+                    VALUES (@temp, @i);
+                    
+                    SET @i = @i + @len;
+                    CONTINUE;
+                END
             END
         END
         SET @i = @i + 1;
