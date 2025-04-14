@@ -1,29 +1,16 @@
--- Reemplaza 'TuBaseDeDatos' con el nombre de tu base de datos
-USE TuBaseDeDatos;
-GO
-
--- Reemplaza 'TuEsquema' con el nombre del esquema que deseas inspeccionar
-DECLARE @SchemaName SYSNAME = 'TuEsquema';
-
 SELECT
-    prin.name AS PrincipalName,
-    CASE
-        WHEN prin.type_desc = 'SQL_USER' THEN 'Usuario SQL'
-        WHEN prin.type_desc = 'WINDOWS_USER' THEN 'Usuario Windows'
-        WHEN prin.type_desc = 'DATABASE_ROLE' THEN 'Rol de Base de Datos'
-        WHEN prin.type_desc = 'SERVER_ROLE' THEN 'Rol de Servidor'
-        ELSE prin.type_desc
-    END AS PrincipalType,
-    perm.permission_name AS PermissionName,
-    perm.state_desc AS PermissionState
+    dp.name AS Usuario,
+    dp.type_desc AS Tipo,
+    perm.permission_name AS Permiso,
+    perm.state_desc AS Estado,
+    s.name AS Esquema
 FROM
-    sys.database_permissions perm
-INNER JOIN
-    sys.database_principals prin ON perm.grantee_principal_id = prin.principal_id
-INNER JOIN
-    sys.schemas sch ON perm.major_id = sch.schema_id
+    sys.database_permissions AS perm
+JOIN
+    sys.schemas AS s ON perm.major_id = s.schema_id
+JOIN
+    sys.database_principals AS dp ON perm.grantee_principal_id = dp.principal_id
 WHERE
-    sch.name = @SchemaName
+    perm.class = 3  -- Clase 3 = Schema
 ORDER BY
-    prin.name, perm.permission_name;
-GO
+    s.name, dp.name, perm.permission_name;
