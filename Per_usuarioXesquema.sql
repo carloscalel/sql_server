@@ -16,14 +16,16 @@ ExplicitPerms AS (
         dp.name AS Grantee,
         dp.type_desc AS Tipo,
         perm.class_desc,
-        s.name AS Esquema,
-        OBJECT_NAME(perm.major_id) AS Objeto,
+        COALESCE(s.name, o_schema.name) AS Esquema,
+        COALESCE(OBJECT_NAME(perm.major_id), '-') AS Objeto,
         perm.permission_name AS Permiso,
         perm.state_desc AS Estado
     FROM
         sys.database_permissions perm
-    LEFT JOIN sys.schemas s ON perm.class_desc = 'SCHEMA' AND perm.major_id = s.schema_id
     JOIN sys.database_principals dp ON perm.grantee_principal_id = dp.principal_id
+    LEFT JOIN sys.schemas s ON perm.class_desc = 'SCHEMA' AND perm.major_id = s.schema_id
+    LEFT JOIN sys.objects o ON perm.class_desc IN ('OBJECT_OR_COLUMN') AND perm.major_id = o.object_id
+    LEFT JOIN sys.schemas o_schema ON o.schema_id = o_schema.schema_id
 ),
 -- CTE: Permisos heredados por roles
 InheritedPerms AS (
@@ -32,8 +34,8 @@ InheritedPerms AS (
         dp.name AS Grantee,
         dp.type_desc AS Tipo,
         perm.class_desc,
-        s.name AS Esquema,
-        OBJECT_NAME(perm.major_id) AS Objeto,
+        COALESCE(s.name, o_schema.name) AS Esquema,
+        COALESCE(OBJECT_NAME(perm.major_id), '-') AS Objeto,
         perm.permission_name AS Permiso,
         perm.state_desc AS Estado,
         ur.role_name AS A_traves_del_Rol
@@ -42,6 +44,8 @@ InheritedPerms AS (
     JOIN sys.database_permissions perm ON perm.grantee_principal_id = ur.role_principal_id
     JOIN sys.database_principals dp ON ur.user_principal_id = dp.principal_id
     LEFT JOIN sys.schemas s ON perm.class_desc = 'SCHEMA' AND perm.major_id = s.schema_id
+    LEFT JOIN sys.objects o ON perm.class_desc IN ('OBJECT_OR_COLUMN') AND perm.major_id = o.object_id
+    LEFT JOIN sys.schemas o_schema ON o.schema_id = o_schema.schema_id
 )
 
 -- UNION: Mostrar permisos directos e indirectos
@@ -50,7 +54,7 @@ SELECT
     Tipo,
     class_desc AS Tipo_Objeto,
     ISNULL(Esquema, '-') AS Esquema,
-    ISNULL(Objeto, '-') AS Objeto,
+    Objeto,
     Permiso,
     Estado,
     NULL AS A_traves_del_Rol
@@ -63,7 +67,7 @@ SELECT
     Tipo,
     class_desc AS Tipo_Objeto,
     ISNULL(Esquema, '-') AS Esquema,
-    ISNULL(Objeto, '-') AS Objeto,
+    Objeto,
     Permiso,
     Estado,
     A_traves_del_Rol
