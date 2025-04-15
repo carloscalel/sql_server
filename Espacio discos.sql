@@ -1,55 +1,44 @@
--- Script para verificar el espacio utilizado por los archivos tempdb en SQL Server
+-- Script para ver espacio usado y disponible en discos en SQL Server
+-- Incluye: ruta, tipo, tamaño total, libre, usado y espacio por compactar
 
--- Paso 1: Verificar el tamaño actual y el espacio libre de los archivos de datos de tempdb
-SELECT
-    name AS FileName,
-    size * 8.0 / 1024 AS FileSizeMB,
-    FILEPROPERTY(name, 'SpaceUsed') * 8.0 / 1024 AS SpaceUsedMB,
-    size * 8.0 / 1024 - FILEPROPERTY(name, 'SpaceUsed') * 8.0 / 1024 AS FreeSpaceMB
-FROM sys.database_files
-WHERE database_id = DB_ID('tempdb')
-AND type_desc = 'ROWS';
+-- Crear tabla temporal para almacenar información de volúmenes
+IF OBJECT_ID('tempdb..#volumes') IS NOT NULL DROP TABLE #volumes
 
-GO
+CREATE TABLE #volumes (
+    volume_mount_point NVARCHAR(256),
+    file_system_type   NVARCHAR(256),
+    logical_volume_name NVARCHAR(256),
+    total_bytes        BIGINT,
+    available_bytes    BIGINT
+)
 
--- Paso 2: Verificar el tamaño actual y el espacio libre de los archivos de log de tempdb
-SELECT
-    name AS FileName,
-    size * 8.0 / 1024 AS FileSizeMB,
-    FILEPROPERTY(name, 'SpaceUsed') * 8.0 / 1024 AS SpaceUsedMB,
-    size * 8.0 / 1024 - FILEPROPERTY(name, 'SpaceUsed') * 8.0 / 1024 AS FreeSpaceMB
-FROM sys.database_files
-WHERE database_id = DB_ID('tempdb')
-AND type_desc = 'LOG';
+-- Insertar datos desde función extendida
+INSERT INTO #volumes
+EXEC xp_fixeddrives
 
-GO
-
--- Paso 3: (Opcional) Verificar el espacio utilizado por las tablas internas de tempdb
--- Esto puede dar una idea de qué objetos están consumiendo más espacio.
-SELECT
-    SUM(internal_table_reserved_page_count) * 8.0 / 1024 AS InternalTablesReservedMB,
-    SUM(user_table_reserved_page_count) * 8.0 / 1024 AS UserTablesReservedMB,
-    SUM(version_store_reserved_page_count) * 8.0 / 1024 AS VersionStoreReservedMB,
-    SUM(sort_pages_reserved) * 8.0 / 1024 AS SortPagesReservedMB,
-    SUM(lob_reserved_page_count) * 8.0 / 1024 AS LOBReservedMB
-FROM sys.dm_db_file_space_usage;
-
-GO
-
--- Paso 4: (Opcional) Verificar el espacio utilizado por las sesiones individuales en tempdb
--- Requiere permisos VIEW SERVER STATE.
-SELECT
-    s.session_id,
-    login_name,
-    program_name,
-    SUM(tsu.user_objects_alloc_page_count) * 8.0 / 1024 AS UserObjectsAllocatedMB,
-    SUM(tsu.user_objects_dealloc_page_count) * 8.0 / 1024 AS UserObjectsDeallocatedMB,
-    SUM(tsu.internal_objects_alloc_page_count) * 8.0 / 1024 AS InternalObjectsAllocatedMB,
-    SUM(tsu.internal_objects_dealloc_page_count) * 8.0 / 1024 AS InternalObjectsDeallocatedMB
-FROM sys.dm_db_task_space_usage AS tsu
-INNER JOIN sys.dm_exec_sessions AS s
-ON tsu.session_id = s.session_id
-GROUP BY s.session_id, login_name, program_name
-ORDER BY SUM(tsu.user_objects_alloc_page_count) DESC;
-
-GO
+-- Alternativa mejorada usando sys.dm_os_volume_stats
+SELECT 
+    vs.volume_mount_point AS [Ruta],
+    vs.file_system_type AS [TipoSistema],
+    vs.logical_volume_name AS [NombreVolumen],
+    vs.total_bytes / 1024 / 1024 / 1024 AS [Tamaño_GB],
+    vs.available_bytes / 1024 / 1024 / 1024 AS [Libre_GB],
+    (vs.total_bytes - vs.available_bytes) / 1024 / 1024 / 1024 AS [Usado_GB],
+    dbf.filepath,
+    dbf.dbname,
+    dbf.type_desc AS [TipoArchivo],
+    dbf.size_mb,
+    dbf.used_space_mb,
+    dbf.size_mb - dbf.used_space_mb AS [EspacioPorCompactar_MB]
+FROM sys.master_files mf
+CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.file_id) vs
+CROSS APPLY (
+    SELECT 
+        DB_NAME(mf.database_id) AS dbname,
+        mf.name AS filelogicalname,
+        mf.type_desc,
+        mf.physical_name AS filepath,
+        mf.size * 8 / 1024.0 AS size_mb,
+        CAST(FILEPROPERTY(mf.name, 'SpaceUsed') AS INT) * 8 / 1024.0 AS used_space_mb
+) dbf
+ORDER BY vs.volume_mount_point, dbf.dbname
