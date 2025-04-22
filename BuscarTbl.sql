@@ -3,15 +3,16 @@ DECLARE @TableName NVARCHAR(255) = 'TuTabla';
 
 -- Busca la tabla en todas las bases de datos
 SELECT
-    DB_NAME(database_id) AS DatabaseName,
-    SCHEMA_NAME(schema_id) AS SchemaName,
-    name AS TableName
+    d.name AS DatabaseName,
+    s.name AS SchemaName,
+    o.name AS TableName
 FROM
-    sys.databases
+    sys.databases d
 CROSS APPLY
-    sys.dm_db_objects(database_id)
+    (SELECT name, schema_id FROM sys.objects WHERE type = 'U' AND name = @TableName) o
+INNER JOIN
+    sys.schemas s ON o.schema_id = s.schema_id
 WHERE
-    type = 'U' -- 'U' indica tablas definidas por el usuario
-    AND name = @TableName
+    o.name IS NOT NULL
 ORDER BY
     DatabaseName, SchemaName, TableName;
