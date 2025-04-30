@@ -1,46 +1,37 @@
--- Script corregido para monitorear las transacciones por segundo en SQL Server
+-- Script para medir transacciones por segundo en SQL Server
+-- Muestra el total de transacciones y las diferencia para calcular TPS
 
-DECLARE @ts_now BIGINT;
-DECLARE @ts_begin BIGINT;
-DECLARE @transactions_now BIGINT;
-DECLARE @transactions_begin BIGINT;
-DECLARE @cpu_ticks_per_ms DECIMAL(20, 5);
-
--- Obtener el número de ticks de CPU por milisegundo
-SELECT @cpu_ticks_per_ms = cpu_ticks / CAST(ms_ticks AS DECIMAL(20, 5))
-FROM sys.dm_os_sys_info;
-
--- Obtener la marca de tiempo inicial y el contador de transacciones
-SELECT @ts_begin = cpu_ticks,
-       @transactions_begin = cntr_value
+-- Paso 1: Obtener contador inicial
+SELECT 
+    instance_name,
+    cntr_value AS [Transactions],
+    CURRENT_TIMESTAMP AS [StartTime]
+INTO #TransStart
 FROM sys.dm_os_performance_counters
-WHERE counter_name = 'Transactions/sec';
+WHERE counter_name = 'Transactions/sec'
+AND instance_name = '_Total'
 
--- Esperar un breve intervalo de tiempo (en milisegundos) para calcular la tasa
-WAITFOR DELAY '00:00:05'; -- Puedes ajustar este valor según necesites
+-- Esperar un intervalo (ej. 5 segundos)
+WAITFOR DELAY '00:00:05'
 
--- Obtener la marca de tiempo actual y el contador de transacciones actual
-SELECT @ts_now = cpu_ticks,
-       @transactions_now = cntr_value
+-- Paso 2: Obtener contador final
+SELECT 
+    instance_name,
+    cntr_value AS [Transactions],
+    CURRENT_TIMESTAMP AS [EndTime]
+INTO #TransEnd
 FROM sys.dm_os_performance_counters
-WHERE counter_name = 'Transactions/sec';
+WHERE counter_name = 'Transactions/sec'
+AND instance_name = '_Total'
 
--- Calcular la diferencia en las marcas de tiempo (en segundos)
-DECLARE @elapsed_time_seconds DECIMAL(10, 2);
-SET @elapsed_time_seconds = CAST((@ts_now - @ts_begin) AS DECIMAL(20, 2)) / @cpu_ticks_per_ms / 1000;
+-- Paso 3: Calcular TPS en el intervalo
+SELECT 
+    E.instance_name,
+    (E.Transactions - S.Transactions) / 
+    DATEDIFF(SECOND, S.StartTime, E.EndTime) AS [TPS]
+FROM #TransStart S
+JOIN #TransEnd E ON S.instance_name = E.instance_name
 
--- Calcular la diferencia en el número de transacciones
-DECLARE @transaction_difference INT;
-SET @transaction_difference = @transactions_now - @transactions_begin;
-
--- Calcular las transacciones por segundo
-DECLARE @transactions_per_second DECIMAL(10, 2);
-IF @elapsed_time_seconds > 0
-    SET @transactions_per_second = CAST(@transaction_difference AS DECIMAL(10, 2)) / @elapsed_time_seconds;
-ELSE
-    SET @transactions_per_second = 0;
-
--- Mostrar el resultado
-SELECT
-    GETDATE() AS CollectionTime,
-    @transactions_per_second AS TransactionsPerSecond;
+-- Limpiar tablas temporales
+DROP TABLE #TransStart
+DROP TABLE #TransEnd
