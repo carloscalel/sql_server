@@ -1,12 +1,24 @@
+-- Solo si tienes SQL Server 2016 o superior
+WITH Partes AS (
+    SELECT 
+        Cuenta,
+        LEFT(Cuenta, CHARINDEX('-', Cuenta) - 1) AS Parte1,
+        SUBSTRING(Cuenta, 
+                  CHARINDEX('-', Cuenta) + 1, 
+                  CHARINDEX('-', Cuenta, CHARINDEX('-', Cuenta) + 1) - CHARINDEX('-', Cuenta) - 1) AS Parte2,
+        RIGHT(Cuenta, LEN(Cuenta) - CHARINDEX('-', Cuenta, CHARINDEX('-', Cuenta) + 1)) AS Parte3
+    FROM Cuentas
+    WHERE 
+        Cuenta NOT LIKE '%[^0-9-]%' AND
+        LEN(Cuenta) - LEN(REPLACE(Cuenta, '-', '')) = 2 AND
+        CHARINDEX('-', Cuenta) > 1 AND
+        RIGHT(Cuenta, 1) <> '-'
+)
 SELECT 
     Cuenta,
-    CASE 
-        WHEN 
-            Cuenta LIKE '%[^0-9-]%'         -- Contiene algo que no es dígito ni guion
-            OR LEN(Cuenta) - LEN(REPLACE(Cuenta, '-', '')) <> 2  -- No tiene exactamente 2 guiones
-            OR CHARINDEX('-', Cuenta) = 1                         -- Primer carácter es guion
-            OR RIGHT(Cuenta, 1) = '-'                             -- Último carácter es guion
-        THEN 'Formato inválido'
-        ELSE 'Formato válido'
+    CASE
+        WHEN LEN(Parte1) <= 3 AND LEN(Parte2) <= 7 AND LEN(Parte3) = 1
+            THEN 'Formato válido'
+        ELSE 'Excede el formato XXX-XXXXXXX-X'
     END AS Resultado
-FROM Cuentas;
+FROM Partes;
