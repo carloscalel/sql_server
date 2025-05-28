@@ -17,8 +17,10 @@ SELECT
     ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
     ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
     MAX(ses.login_time) AS LastLoginTime,
+    MAX(CONVERT(VARCHAR(100), ses.login_time, 120)) AS LastLoginExact,
     MAX(con.client_net_address) AS LastClientIP,
     MAX(ses.host_name) AS LastClientHost,
+    MAX(ses.program_name) AS LastClientApp,
     ''' + @ServerName + ''' AS ServerName,
     NULL AS DatabaseName
 FROM sys.server_principals sp
@@ -43,7 +45,7 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
 ';
 
 -- ============================================
--- Parte 2: Usuarios en bases de datos
+-- Parte 2: Usuarios en cada base de datos
 -- ============================================
 DECLARE @DBName NVARCHAR(255);
 DECLARE @DBCursor CURSOR;
@@ -71,8 +73,10 @@ BEGIN
         ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
         ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
         NULL AS LastLoginTime,
+        NULL AS LastLoginExact,
         NULL AS LastClientIP,
         NULL AS LastClientHost,
+        NULL AS LastClientApp,
         ''' + @ServerName + ''' AS ServerName,
         ''' + @DBName + ''' AS DatabaseName
     FROM [' + @DBName + '].sys.database_principals dp
