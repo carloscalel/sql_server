@@ -3,9 +3,6 @@ DECLARE @SQL NVARCHAR(MAX) = '';
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
 DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
--- ============================================
--- Parte 1: Logins (a nivel de instancia)
--- ============================================
 SET @SQL += '
 SELECT 
     ''Server'' AS Scope,
@@ -20,12 +17,13 @@ SELECT
     ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
     ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
     MAX(ses.login_time) AS LastLoginTime,
-    MAX(ses.client_net_address) AS LastClientIP,
+    MAX(con.client_net_address) AS LastClientIP,
     MAX(ses.host_name) AS LastClientHost,
     ''' + @ServerName + ''' AS ServerName,
     NULL AS DatabaseName
 FROM sys.server_principals sp
 LEFT JOIN sys.dm_exec_sessions ses ON sp.sid = ses.security_id
+LEFT JOIN sys.dm_exec_connections con ON ses.session_id = con.session_id
 LEFT JOIN sys.server_permissions perm ON sp.principal_id = perm.grantee_principal_id
 LEFT JOIN (
     SELECT member_principal_id,
@@ -45,7 +43,7 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
 ';
 
 -- ============================================
--- Parte 2: Usuarios en cada base de datos
+-- Parte 2: Usuarios en bases de datos
 -- ============================================
 DECLARE @DBName NVARCHAR(255);
 DECLARE @DBCursor CURSOR;
