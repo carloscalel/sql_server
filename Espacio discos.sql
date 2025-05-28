@@ -1,43 +1,27 @@
-IF OBJECT_ID('tempdb..#Resultados') IS NOT NULL
-    DROP TABLE #Resultados;
+-- Verifica espacio de archivos de bases de datos y sugiere SHRINK
+USE master;
+GO
 
-CREATE TABLE #Resultados (
-    BaseDeDatos SYSNAME,
-    NombreArchivo SYSNAME,
-    Disco NVARCHAR(10),
-    RutaCompleta NVARCHAR(MAX),
-    TipoArchivo NVARCHAR(20),
-    Tamaño_Total_MB DECIMAL(18,2),
-    Espacio_Usado_MB DECIMAL(18,2),
-    Espacio_Libre_MB DECIMAL(18,2),
-    Espacio_Compactable_MB DECIMAL(18,2),
-    Sugerencia_SHRINK NVARCHAR(5)
-);
-
-EXEC sp_msforeachdb N'
-IF ''?'' NOT IN (''tempdb'')
-BEGIN
-    INSERT INTO #Resultados
-    SELECT 
-        ''?'' AS BaseDeDatos,
-        mf.name AS NombreArchivo,
-        LEFT(mf.physical_name, 2) AS Disco,
-        mf.physical_name AS RutaCompleta,
-        mf.type_desc AS TipoArchivo,
-        CAST(mf.size * 8 / 1024 AS DECIMAL(18,2)) AS Tamaño_Total_MB,
-        CAST(FILEPROPERTY(mf.name, ''SpaceUsed'') * 8 / 1024 AS DECIMAL(18,2)) AS Espacio_Usado_MB,
-        CAST((mf.size - FILEPROPERTY(mf.name, ''SpaceUsed'')) * 8 / 1024 AS DECIMAL(18,2)) AS Espacio_Libre_MB,
-        CAST((mf.size - FILEPROPERTY(mf.name, ''SpaceUsed'')) * 8 / 1024 AS DECIMAL(18,2)) AS Espacio_Compactable_MB,
-        CASE 
-            WHEN mf.size > 0 AND 
-                 (CAST(mf.size - FILEPROPERTY(mf.name, ''SpaceUsed'') AS FLOAT) / mf.size) > 0.3 
-            THEN ''SÍ''
-            ELSE ''NO''
-        END AS Sugerencia_SHRINK
-    FROM [?].sys.database_files mf;
-END
-';
-
--- Mostrar los resultados
-SELECT * FROM #Resultados
-ORDER BY Disco, BaseDeDatos, TipoArchivo;
+SELECT
+    DB_NAME(mf.database_id) AS BASE_DATOS,
+    mf.name AS NOMBRE_ARCHIVO,
+    LEFT(mf.physical_name, 1) AS DISCO,
+    mf.physical_name AS RUTA_COMPLETA,
+    mf.type_desc AS TIPO_ARCHIVO,
+    CAST(mf.size * 8.0 / 1024 AS DECIMAL(18,2)) AS TAMANO_MB,
+    CAST(mf.size * 8.0 / 1024 / 1024 AS DECIMAL(18,2)) AS TAMANO_GB,
+    CAST(FILEPROPERTY(mf.name, 'SpaceUsed') * 8.0 / 1024 AS DECIMAL(18,2)) AS USADO_MB,
+    CAST(FILEPROPERTY(mf.name, 'SpaceUsed') * 8.0 / 1024 / 1024 AS DECIMAL(18,2)) AS USADO_GB,
+    CAST((mf.size - FILEPROPERTY(mf.name, 'SpaceUsed')) * 8.0 / 1024 AS DECIMAL(18,2)) AS LIBRE_MB,
+    CAST((mf.size - FILEPROPERTY(mf.name, 'SpaceUsed')) * 8.0 / 1024 / 1024 AS DECIMAL(18,2)) AS LIBRE_GB,
+    CAST(CASE WHEN mf.size > 0 THEN
+        (CAST(FILEPROPERTY(mf.name, 'SpaceUsed') AS FLOAT) / CAST(mf.size AS FLOAT)) * 100 ELSE 0 END
+        AS DECIMAL(5,2)) AS PORCENTAJE_USADO,
+    CASE
+        WHEN mf.type_desc = 'ROWS' AND (mf.size - FILEPROPERTY(mf.name, 'SpaceUsed')) * 8.0 / 1024 > 500
+            THEN 'RECOMENDADO: DBCC SHRINKFILE([' + mf.name + '], TRUNCATEONLY)'
+        ELSE 'No se recomienda compactar'
+    END AS SUGERENCIA_SHRINK
+FROM sys.master_files AS mf
+WHERE mf.type IN (0,1) -- 0: Data, 1: Log
+ORDER BY BASE_DATOS, DISCO, NOMBRE_ARCHIVO;
