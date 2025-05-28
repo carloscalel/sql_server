@@ -20,7 +20,6 @@ WITH ServerRoleHierarchy AS (
     JOIN sys.server_principals sp_role ON srm.role_principal_id = sp_role.principal_id
     JOIN ServerRoleHierarchy srh ON srm.member_principal_id = srh.role_principal_id
 )
--- Combina los permisos y la jerarquía de roles
 SELECT 
     sp.name AS LoginName,
     sp.type_desc AS LoginType,
@@ -48,8 +47,12 @@ LEFT JOIN (
 LEFT JOIN (
     SELECT 
         member_principal_id,
-        STRING_AGG(RolePath, ', ') AS RolePath
-    FROM ServerRoleHierarchy
+        STUFF((
+            SELECT ', ' + RolePath
+            FROM ServerRoleHierarchy sr2
+            WHERE sr2.member_principal_id = sr1.member_principal_id
+            FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS RolePath
+    FROM ServerRoleHierarchy sr1
     GROUP BY member_principal_id
 ) roles ON sp.principal_id = roles.member_principal_id
 WHERE sp.type IN ('S', 'U', 'G')
@@ -121,8 +124,12 @@ BEGIN
     LEFT JOIN (
         SELECT 
             member_principal_id,
-            STRING_AGG(RolePath, '', '') AS RolePath
-        FROM DBRoleHierarchy
+            STUFF((
+                SELECT '', '' + RolePath
+                FROM DBRoleHierarchy dr2
+                WHERE dr2.member_principal_id = dr1.member_principal_id
+                FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)''), 1, 2, '''') AS RolePath
+        FROM DBRoleHierarchy dr1
         GROUP BY member_principal_id
     ) roles ON dp.principal_id = roles.member_principal_id
     WHERE dp.type IN (''S'', ''U'', ''G'', ''E'', ''X'')
