@@ -5,24 +5,24 @@ DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
 SET @SQL += '
 SELECT 
-    ''Server'' AS Scope,
-    sp.name COLLATE ' + @ServerCollation + ' AS PrincipalName,
-    sp.type_desc COLLATE ' + @ServerCollation + ' AS PrincipalType,
-    sp.default_database_name COLLATE ' + @ServerCollation + ' AS DefaultDB,
-    sp.create_date,
-    sp.modify_date,
-    ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClassDesc,
-    ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permission,
-    ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS PermissionState,
-    ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
-    ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
-    MAX(ses.login_time) AS LastLoginTime,
-    MAX(CONVERT(VARCHAR(100), ses.login_time, 120)) AS LastLoginExact,
-    MAX(con.client_net_address) AS LastClientIP,
-    MAX(ses.host_name) AS LastClientHost,
-    MAX(ses.program_name) AS LastClientApp,
-    ''' + @ServerName + ''' AS ServerName,
-    NULL AS DatabaseName
+    ''Server'' AS Alcance,
+    sp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
+    sp.type_desc COLLATE ' + @ServerCollation + ' AS TipoPrincipal,
+    sp.default_database_name COLLATE ' + @ServerCollation + ' AS BaseDatosPredeterminada,
+    sp.create_date AS FechaCreacion,
+    sp.modify_date AS FechaModificacion,
+    ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClasePermiso,
+    ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permiso,
+    ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS EstadoPermiso,
+    ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS IdObjeto,
+    ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS RolesAsignados,
+    MAX(ses.login_time) AS UltimaConexion,
+    MAX(CONVERT(VARCHAR(100), ses.login_time, 120)) AS UltimaConexionExacta,
+    MAX(con.client_net_address) AS UltimaIP,
+    MAX(ses.host_name) AS UltimoHostCliente,
+    MAX(ses.program_name) AS UltimaAplicacionCliente,
+    ''' + @ServerName + ''' AS Servidor,
+    NULL AS BaseDatos
 FROM sys.server_principals sp
 LEFT JOIN sys.dm_exec_sessions ses ON sp.sid = ses.security_id
 LEFT JOIN sys.dm_exec_connections con ON ses.session_id = con.session_id
@@ -61,24 +61,24 @@ BEGIN
     SET @SQL += '
     UNION ALL
     SELECT 
-        ''Database'' AS Scope,
-        dp.name COLLATE ' + @ServerCollation + ' AS PrincipalName,
-        dp.type_desc COLLATE ' + @ServerCollation + ' AS PrincipalType,
-        NULL AS DefaultDB,
-        dp.create_date,
-        dp.modify_date,
-        ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClassDesc,
-        ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permission,
-        ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS PermissionState,
-        ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
-        ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
-        NULL AS LastLoginTime,
-        NULL AS LastLoginExact,
-        NULL AS LastClientIP,
-        NULL AS LastClientHost,
-        NULL AS LastClientApp,
-        ''' + @ServerName + ''' AS ServerName,
-        ''' + @DBName + ''' AS DatabaseName
+        ''Database'' AS Alcance,
+        dp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
+        dp.type_desc COLLATE ' + @ServerCollation + ' AS TipoPrincipal,
+        NULL AS BaseDatosPredeterminada,
+        dp.create_date AS FechaCreacion,
+        dp.modify_date AS FechaModificacion,
+        ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClasePermiso,
+        ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permiso,
+        ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS EstadoPermiso,
+        ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS IdObjeto,
+        ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS RolesAsignados,
+        NULL AS UltimaConexion,
+        NULL AS UltimaConexionExacta,
+        NULL AS UltimaIP,
+        NULL AS UltimoHostCliente,
+        NULL AS UltimaAplicacionCliente,
+        ''' + @ServerName + ''' AS Servidor,
+        ''' + @DBName + ''' AS BaseDatos
     FROM [' + @DBName + '].sys.database_principals dp
     LEFT JOIN [' + @DBName + '].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
     LEFT JOIN (
