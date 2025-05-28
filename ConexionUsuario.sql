@@ -4,23 +4,6 @@ DECLARE @SQL NVARCHAR(MAX) = '';
 -- Parte 1: Logins (a nivel de instancia)
 -- ============================================
 SET @SQL += '
--- Logins de servidor
-WITH ServerRoleHierarchy AS (
-    SELECT 
-        member_principal_id,
-        role_principal_id,
-        CAST(sp_role.name AS NVARCHAR(MAX)) AS RolePath
-    FROM sys.server_role_members srm
-    JOIN sys.server_principals sp_role ON srm.role_principal_id = sp_role.principal_id
-    UNION ALL
-    SELECT 
-        srm.member_principal_id,
-        srm.role_principal_id,
-        CAST(srh.RolePath + '' > '' + sp_role.name AS NVARCHAR(MAX)) AS RolePath
-    FROM sys.server_role_members srm
-    JOIN sys.server_principals sp_role ON srm.role_principal_id = sp_role.principal_id
-    JOIN ServerRoleHierarchy srh ON srm.member_principal_id = srh.role_principal_id
-)
 SELECT 
     ''Server'' AS Scope,
     sp.name AS PrincipalName,
@@ -41,12 +24,13 @@ LEFT JOIN sys.server_permissions perm ON sp.principal_id = perm.grantee_principa
 LEFT JOIN (
     SELECT member_principal_id,
            STUFF((
-                SELECT '', '' + RolePath
-                FROM ServerRoleHierarchy sr2
-                WHERE sr2.member_principal_id = sr1.member_principal_id
+                SELECT '', '' + sp2.name
+                FROM sys.server_role_members srm2
+                JOIN sys.server_principals sp2 ON srm2.role_principal_id = sp2.principal_id
+                WHERE srm2.member_principal_id = srm1.member_principal_id
                 FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)'')
            , 1, 2, '''') AS RolePath
-    FROM ServerRoleHierarchy sr1
+    FROM sys.server_role_members srm1
     GROUP BY member_principal_id
 ) roles ON sp.principal_id = roles.member_principal_id
 WHERE sp.type IN (''S'', ''U'', ''G'')
@@ -89,10 +73,24 @@ BEGIN
     LEFT JOIN (
         SELECT member_principal_id,
                STUFF((
-                    SELECT '', '' + CAST(drp_role.name AS NVARCHAR(MAX))
+                    SELECT '', '' + drp2.name
                     FROM [' + @DBName + '].sys.database_role_members drm2
-                    JOIN [' + @DBName + '].sys.database_principals drp_role ON drm2.role_principal_id = drp_role.principal_id
+                    JOIN [' + @DBName + '].sys.database_principals drp2 ON drm2.role_principal_id = drp2.principal_id
                     WHERE drm2.member_principal_id = drm1.member_principal_id
                     FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)'')
                , 1, 2, '''') AS RolePath
-        FROM [' +
+        FROM [' + @DBName + '].sys.database_role_members drm1
+        GROUP BY drm1.member_principal_id
+    ) roles ON dp.principal_id = roles.member_principal_id
+    WHERE dp.type IN (''S'', ''U'', ''G'', ''E'', ''X'')
+    ';
+    FETCH NEXT FROM @DBCursor INTO @DBName;
+END;
+
+CLOSE @DBCursor;
+DEALLOCATE @DBCursor;
+
+-- ============================================
+-- Ejecutar consulta completa
+-- ============================================
+EXEC sp_executesql @SQL;
