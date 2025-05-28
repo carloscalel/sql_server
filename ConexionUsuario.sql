@@ -22,7 +22,8 @@ SELECT
     MAX(ses.host_name) AS UltimoHostCliente,
     MAX(ses.program_name) AS UltimaAplicacionCliente,
     ''' + @ServerName + ''' AS Servidor,
-    NULL AS BaseDatos
+    NULL AS BaseDatos,
+    DATEDIFF(DAY, MAX(ses.login_time), GETDATE()) AS DiasSinConexion
 FROM sys.server_principals sp
 LEFT JOIN sys.dm_exec_sessions ses ON sp.sid = ses.security_id
 LEFT JOIN sys.dm_exec_connections con ON ses.session_id = con.session_id
@@ -78,7 +79,8 @@ BEGIN
         NULL AS UltimoHostCliente,
         NULL AS UltimaAplicacionCliente,
         ''' + @ServerName + ''' AS Servidor,
-        ''' + @DBName + ''' AS BaseDatos
+        ''' + @DBName + ''' AS BaseDatos,
+        NULL AS DiasSinConexion
     FROM [' + @DBName + '].sys.database_principals dp
     LEFT JOIN [' + @DBName + '].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
     LEFT JOIN (
