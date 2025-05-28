@@ -1,7 +1,7 @@
 DECLARE @SQL NVARCHAR(MAX) = '';
 
--- Obtener la collation del servidor para aplicar uniformemente
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
+DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
 -- ============================================
 -- Parte 1: Logins (a nivel de instancia)
@@ -20,6 +20,9 @@ SELECT
     ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
     ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
     MAX(ses.login_time) AS LastLoginTime,
+    MAX(ses.client_net_address) AS LastClientIP,
+    MAX(ses.host_name) AS LastClientHost,
+    ''' + @ServerName + ''' AS ServerName,
     NULL AS DatabaseName
 FROM sys.server_principals sp
 LEFT JOIN sys.dm_exec_sessions ses ON sp.sid = ses.security_id
@@ -70,6 +73,9 @@ BEGIN
         ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
         ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
         NULL AS LastLoginTime,
+        NULL AS LastClientIP,
+        NULL AS LastClientHost,
+        ''' + @ServerName + ''' AS ServerName,
         ''' + @DBName + ''' AS DatabaseName
     FROM [' + @DBName + '].sys.database_principals dp
     LEFT JOIN [' + @DBName + '].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
