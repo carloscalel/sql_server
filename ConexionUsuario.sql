@@ -1,21 +1,24 @@
 DECLARE @SQL NVARCHAR(MAX) = '';
 
+-- Obtener la collation del servidor para aplicar uniformemente
+DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
+
 -- ============================================
 -- Parte 1: Logins (a nivel de instancia)
 -- ============================================
 SET @SQL += '
 SELECT 
     ''Server'' AS Scope,
-    sp.name AS PrincipalName,
-    sp.type_desc AS PrincipalType,
-    sp.default_database_name AS DefaultDB,
+    sp.name COLLATE ' + @ServerCollation + ' AS PrincipalName,
+    sp.type_desc COLLATE ' + @ServerCollation + ' AS PrincipalType,
+    sp.default_database_name COLLATE ' + @ServerCollation + ' AS DefaultDB,
     sp.create_date,
     sp.modify_date,
-    ISNULL(perm.class_desc, '''') AS ClassDesc,
-    ISNULL(perm.permission_name, '''') AS Permission,
-    ISNULL(perm.state_desc, '''') AS PermissionState,
-    ISNULL(perm.major_id, 0) AS MajorID,
-    ISNULL(roles.RolePath, '''') AS Roles,
+    ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClassDesc,
+    ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permission,
+    ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS PermissionState,
+    ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
+    ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
     MAX(ses.login_time) AS LastLoginTime,
     NULL AS DatabaseName
 FROM sys.server_principals sp
@@ -45,7 +48,7 @@ DECLARE @DBName NVARCHAR(255);
 DECLARE @DBCursor CURSOR;
 
 SET @DBCursor = CURSOR FOR 
-SELECT name FROM sys.databases WHERE database_id > 4; -- Omitir bases de sistema
+SELECT name FROM sys.databases WHERE database_id > 4;
 
 OPEN @DBCursor;
 FETCH NEXT FROM @DBCursor INTO @DBName;
@@ -56,16 +59,16 @@ BEGIN
     UNION ALL
     SELECT 
         ''Database'' AS Scope,
-        dp.name AS PrincipalName,
-        dp.type_desc AS PrincipalType,
+        dp.name COLLATE ' + @ServerCollation + ' AS PrincipalName,
+        dp.type_desc COLLATE ' + @ServerCollation + ' AS PrincipalType,
         NULL AS DefaultDB,
         dp.create_date,
         dp.modify_date,
-        ISNULL(perm.class_desc, '''') AS ClassDesc,
-        ISNULL(perm.permission_name, '''') AS Permission,
-        ISNULL(perm.state_desc, '''') AS PermissionState,
-        ISNULL(perm.major_id, 0) AS MajorID,
-        ISNULL(roles.RolePath, '''') AS Roles,
+        ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClassDesc,
+        ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permission,
+        ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS PermissionState,
+        ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS MajorID,
+        ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS Roles,
         NULL AS LastLoginTime,
         ''' + @DBName + ''' AS DatabaseName
     FROM [' + @DBName + '].sys.database_principals dp
@@ -91,6 +94,6 @@ CLOSE @DBCursor;
 DEALLOCATE @DBCursor;
 
 -- ============================================
--- Ejecutar consulta completa
+-- Ejecutar consulta final
 -- ============================================
 EXEC sp_executesql @SQL;
