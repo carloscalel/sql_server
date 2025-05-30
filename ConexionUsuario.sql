@@ -3,6 +3,9 @@ DECLARE @SQL NVARCHAR(MAX) = '';
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
 DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
+-- ============================================
+-- Parte 1: Usuarios a nivel de servidor
+-- ============================================
 SET @SQL += '
 SELECT 
     ''Server'' AS Alcance,
@@ -49,21 +52,13 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
 ';
 
 -- ============================================
--- Parte 2: Usuarios a nivel base de datos (no tiene política/caducidad de contraseña)
+-- Parte 2: Usuarios a nivel base de datos usando sp_MSforeachdb
 -- ============================================
-DECLARE @DBName NVARCHAR(255);
-DECLARE @DBCursor CURSOR;
+DECLARE @DBSQL NVARCHAR(MAX);
 
-SET @DBCursor = CURSOR FOR 
-SELECT name FROM sys.databases WHERE database_id > 4;
-
-OPEN @DBCursor;
-FETCH NEXT FROM @DBCursor INTO @DBName;
-
-WHILE @@FETCH_STATUS = 0
+SET @DBSQL = '
+IF ''?'' NOT IN (''master'', ''tempdb'', ''model'', ''msdb'') 
 BEGIN
-    SET @SQL += '
-    UNION ALL
     SELECT 
         ''Database'' AS Alcance,
         dp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
@@ -82,33 +77,61 @@ BEGIN
         NULL AS UltimoHostCliente,
         NULL AS UltimaAplicacionCliente,
         ''' + @ServerName + ''' AS Servidor,
-        ''' + @DBName + ''' AS BaseDatos,
+        ''?'' AS BaseDatos,
         NULL AS DiasSinConexion,
         NULL AS PoliticaContraseña,
         NULL AS CaducidadContraseña
-    FROM [' + @DBName + '].sys.database_principals dp
-    LEFT JOIN [' + @DBName + '].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
+    FROM [?].sys.database_principals dp
+    LEFT JOIN [?].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
     LEFT JOIN (
         SELECT member_principal_id,
                STUFF((
                     SELECT '', '' + drp2.name
-                    FROM [' + @DBName + '].sys.database_role_members drm2
-                    JOIN [' + @DBName + '].sys.database_principals drp2 ON drm2.role_principal_id = drp2.principal_id
+                    FROM [?].sys.database_role_members drm2
+                    JOIN [?].sys.database_principals drp2 ON drm2.role_principal_id = drp2.principal_id
                     WHERE drm2.member_principal_id = drm1.member_principal_id
                     FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)'')
                , 1, 2, '''') AS RolePath
-        FROM [' + @DBName + '].sys.database_role_members drm1
+        FROM [?].sys.database_role_members drm1
         GROUP BY drm1.member_principal_id
     ) roles ON dp.principal_id = roles.member_principal_id
     WHERE dp.type IN (''S'', ''U'', ''G'', ''E'', ''X'')
-    ';
-    FETCH NEXT FROM @DBCursor INTO @DBName;
-END;
+END
+';
 
-CLOSE @DBCursor;
-DEALLOCATE @DBCursor;
+-- Almacenar los resultados de cada ejecución en una tabla temporal
+IF OBJECT_ID('tempdb..#Resultados') IS NOT NULL DROP TABLE #Resultados;
+CREATE TABLE #Resultados (
+    Alcance NVARCHAR(50),
+    NombreUsuario NVARCHAR(128),
+    TipoPrincipal NVARCHAR(60),
+    BaseDatosPredeterminada NVARCHAR(128),
+    FechaCreacion DATETIME,
+    FechaModificacion DATETIME,
+    ClasePermiso NVARCHAR(128),
+    Permiso NVARCHAR(128),
+    EstadoPermiso NVARCHAR(60),
+    IdObjeto NVARCHAR(128),
+    RolesAsignados NVARCHAR(MAX),
+    UltimaConexion DATETIME,
+    UltimaConexionExacta NVARCHAR(100),
+    UltimaIP NVARCHAR(48),
+    UltimoHostCliente NVARCHAR(128),
+    UltimaAplicacionCliente NVARCHAR(128),
+    Servidor NVARCHAR(128),
+    BaseDatos NVARCHAR(128),
+    DiasSinConexion INT,
+    PoliticaContraseña NVARCHAR(2),
+    CaducidadContraseña NVARCHAR(2)
+);
 
--- ============================================
--- Ejecutar consulta final
--- ============================================
+-- Insertar los resultados del servidor
+INSERT INTO #Resultados
 EXEC sp_executesql @SQL;
+
+-- Insertar los resultados por base de datos
+INSERT INTO #Resultados
+EXEC sp_MSforeachdb @DBSQL;
+
+-- Mostrar el resultado final
+SELECT * FROM #Resultados;
