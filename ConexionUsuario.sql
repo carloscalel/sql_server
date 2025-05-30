@@ -1,10 +1,11 @@
-DECLARE @SQL NVARCHAR(MAX) = '';
-
+DECLARE @SQL NVARCHAR(MAX);
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
 DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
--- Parte 1: Usuarios a nivel de servidor
-SET @SQL += '
+-- ============================================
+-- Parte 1: Usuarios a nivel servidor
+-- ============================================
+SET @SQL = '
 SELECT 
     ''Server'' AS Alcance,
     sp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
@@ -49,7 +50,7 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
          perm.class_desc, perm.permission_name, perm.state_desc, perm.major_id, roles.RolePath, sp.sid, sl.is_policy_checked, sl.is_expiration_checked
 ';
 
--- Crear tabla temporal para guardar resultados
+-- Crear tabla temporal
 IF OBJECT_ID('tempdb..#Resultados') IS NOT NULL DROP TABLE #Resultados;
 CREATE TABLE #Resultados (
     Alcance NVARCHAR(50),
@@ -75,12 +76,14 @@ CREATE TABLE #Resultados (
     CaducidadContraseña NVARCHAR(2)
 );
 
--- Insertar resultados del servidor
+-- Insertar datos del servidor
 INSERT INTO #Resultados
 EXEC sp_executesql @SQL;
 
--- Usar sp_MSforeachdb para recorrer las bases de datos excepto las del sistema
-EXEC sp_MSforeachdb '
+-- ============================================
+-- Parte 2: Usuarios a nivel base de datos con sp_MSforeachdb
+-- ============================================
+EXEC sp_MSforeachdb N'
 IF ''?'' NOT IN (''master'', ''model'', ''msdb'', ''tempdb'') 
 BEGIN
     INSERT INTO #Resultados
@@ -124,5 +127,7 @@ BEGIN
 END
 ';
 
+-- ============================================
 -- Mostrar resultados
+-- ============================================
 SELECT * FROM #Resultados;
