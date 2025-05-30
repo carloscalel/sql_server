@@ -3,9 +3,7 @@ DECLARE @SQL NVARCHAR(MAX) = '';
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
 DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 
--- ============================================
 -- Parte 1: Usuarios a nivel de servidor
--- ============================================
 SET @SQL += '
 SELECT 
     ''Server'' AS Alcance,
@@ -51,55 +49,7 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
          perm.class_desc, perm.permission_name, perm.state_desc, perm.major_id, roles.RolePath, sp.sid, sl.is_policy_checked, sl.is_expiration_checked
 ';
 
--- ============================================
--- Parte 2: Usuarios a nivel base de datos usando sp_MSforeachdb
--- ============================================
-DECLARE @DBSQL NVARCHAR(MAX);
-
-SET @DBSQL = '
-IF ''?'' NOT IN (''master'', ''tempdb'', ''model'', ''msdb'') 
-BEGIN
-    SELECT 
-        ''Database'' AS Alcance,
-        dp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
-        dp.type_desc COLLATE ' + @ServerCollation + ' AS TipoPrincipal,
-        NULL AS BaseDatosPredeterminada,
-        dp.create_date AS FechaCreacion,
-        dp.modify_date AS FechaModificacion,
-        ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClasePermiso,
-        ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permiso,
-        ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS EstadoPermiso,
-        ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS IdObjeto,
-        ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS RolesAsignados,
-        NULL AS UltimaConexion,
-        NULL AS UltimaConexionExacta,
-        NULL AS UltimaIP,
-        NULL AS UltimoHostCliente,
-        NULL AS UltimaAplicacionCliente,
-        ''' + @ServerName + ''' AS Servidor,
-        ''?'' AS BaseDatos,
-        NULL AS DiasSinConexion,
-        NULL AS PoliticaContraseña,
-        NULL AS CaducidadContraseña
-    FROM [?].sys.database_principals dp
-    LEFT JOIN [?].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
-    LEFT JOIN (
-        SELECT member_principal_id,
-               STUFF((
-                    SELECT '', '' + drp2.name
-                    FROM [?].sys.database_role_members drm2
-                    JOIN [?].sys.database_principals drp2 ON drm2.role_principal_id = drp2.principal_id
-                    WHERE drm2.member_principal_id = drm1.member_principal_id
-                    FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)'')
-               , 1, 2, '''') AS RolePath
-        FROM [?].sys.database_role_members drm1
-        GROUP BY drm1.member_principal_id
-    ) roles ON dp.principal_id = roles.member_principal_id
-    WHERE dp.type IN (''S'', ''U'', ''G'', ''E'', ''X'')
-END
-';
-
--- Almacenar los resultados de cada ejecución en una tabla temporal
+-- Crear tabla temporal para guardar resultados
 IF OBJECT_ID('tempdb..#Resultados') IS NOT NULL DROP TABLE #Resultados;
 CREATE TABLE #Resultados (
     Alcance NVARCHAR(50),
@@ -125,13 +75,31 @@ CREATE TABLE #Resultados (
     CaducidadContraseña NVARCHAR(2)
 );
 
--- Insertar los resultados del servidor
+-- Insertar resultados del servidor
 INSERT INTO #Resultados
 EXEC sp_executesql @SQL;
 
--- Insertar los resultados por base de datos
-INSERT INTO #Resultados
-EXEC sp_MSforeachdb @DBSQL;
-
--- Mostrar el resultado final
-SELECT * FROM #Resultados;
+-- Usar sp_MSforeachdb para recorrer las bases de datos excepto las del sistema
+EXEC sp_MSforeachdb '
+IF ''?'' NOT IN (''master'', ''model'', ''msdb'', ''tempdb'') 
+BEGIN
+    INSERT INTO #Resultados
+    SELECT 
+        ''Database'' AS Alcance,
+        dp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
+        dp.type_desc COLLATE ' + @ServerCollation + ' AS TipoPrincipal,
+        NULL AS BaseDatosPredeterminada,
+        dp.create_date AS FechaCreacion,
+        dp.modify_date AS FechaModificacion,
+        ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClasePermiso,
+        ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permiso,
+        ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS EstadoPermiso,
+        ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS IdObjeto,
+        ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS RolesAsignados,
+        NULL AS UltimaConexion,
+        NULL AS UltimaConexionExacta,
+        NULL AS UltimaIP,
+        NULL AS UltimoHostCliente,
+        NULL AS UltimaAplicacionCliente,
+        ''' + @ServerName + ''' AS Servidor,
+        ''?'' AS BaseDatos,
