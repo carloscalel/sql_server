@@ -103,3 +103,26 @@ BEGIN
         NULL AS UltimaAplicacionCliente,
         ''' + @ServerName + ''' AS Servidor,
         ''?'' AS BaseDatos,
+        NULL AS DiasSinConexion,
+        NULL AS PoliticaContraseña,
+        NULL AS CaducidadContraseña
+    FROM [?].sys.database_principals dp
+    LEFT JOIN [?].sys.database_permissions perm ON dp.principal_id = perm.grantee_principal_id
+    LEFT JOIN (
+        SELECT member_principal_id,
+               STUFF((
+                    SELECT '', '' + drp2.name
+                    FROM [?].sys.database_role_members drm2
+                    JOIN [?].sys.database_principals drp2 ON drm2.role_principal_id = drp2.principal_id
+                    WHERE drm2.member_principal_id = drm1.member_principal_id
+                    FOR XML PATH(''''), TYPE).value(''.'', ''NVARCHAR(MAX)'')
+               , 1, 2, '''') AS RolePath
+        FROM [?].sys.database_role_members drm1
+        GROUP BY drm1.member_principal_id
+    ) roles ON dp.principal_id = roles.member_principal_id
+    WHERE dp.type IN (''S'', ''U'', ''G'', ''E'', ''X'')
+END
+';
+
+-- Mostrar resultados
+SELECT * FROM #Resultados;
