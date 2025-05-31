@@ -1,22 +1,22 @@
-DECLARE @SQL NVARCHAR(MAX) = '';
-
 DECLARE @ServerCollation NVARCHAR(128) = CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128));
-DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
+DECLARE @ServerName NVARCHAR(128) = @@SERVERNAME;  -- Cambiar por el nombre real del Linked Server
 
+DECLARE @SQL NVARCHAR(MAX) = N'';
 
-SET @SQL += '
+-- Construimos el SQL original, como lo hacías
+SET @SQL += N'
 SELECT 
     ''Server'' AS Alcance,
-    sp.name COLLATE ' + @ServerCollation + ' AS NombreUsuario,
-    sp.type_desc COLLATE ' + @ServerCollation + ' AS TipoPrincipal,
-    sp.default_database_name COLLATE ' + @ServerCollation + ' AS BaseDatosPredeterminada,
+    sp.name COLLATE ' + @ServerCollation + N' AS NombreUsuario,
+    sp.type_desc COLLATE ' + @ServerCollation + N' AS TipoPrincipal,
+    sp.default_database_name COLLATE ' + @ServerCollation + N' AS BaseDatosPredeterminada,
     sp.create_date AS FechaCreacion,
     sp.modify_date AS FechaModificacion,
-    ISNULL(perm.class_desc COLLATE ' + @ServerCollation + ', '''') AS ClasePermiso,
-    ISNULL(perm.permission_name COLLATE ' + @ServerCollation + ', '''') AS Permiso,
-    ISNULL(perm.state_desc COLLATE ' + @ServerCollation + ', '''') AS EstadoPermiso,
-    ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + ', '''') AS IdObjeto,
-    ISNULL(roles.RolePath COLLATE ' + @ServerCollation + ', '''') AS RolesAsignados,
+    ISNULL(perm.class_desc COLLATE ' + @ServerCollation + N', '''') AS ClasePermiso,
+    ISNULL(perm.permission_name COLLATE ' + @ServerCollation + N', '''') AS Permiso,
+    ISNULL(perm.state_desc COLLATE ' + @ServerCollation + N', '''') AS EstadoPermiso,
+    ISNULL(CAST(perm.major_id AS NVARCHAR) COLLATE ' + @ServerCollation + N', '''') AS IdObjeto,
+    ISNULL(roles.RolePath COLLATE ' + @ServerCollation + N', '''') AS RolesAsignados,
     MAX(ses.login_time) AS UltimaConexion,
     MAX(CONVERT(VARCHAR(100), ses.login_time, 120)) AS UltimaConexionExacta,
     MAX(con.client_net_address) AS UltimaIP,
@@ -34,7 +34,7 @@ LEFT JOIN sys.dm_exec_connections con ON ses.session_id = con.session_id
 LEFT JOIN sys.server_permissions perm ON sp.principal_id = perm.grantee_principal_id
 LEFT JOIN (
     SELECT member_principal_id,
-           STUFF((
+           STUFF(( 
                 SELECT '', '' + sp2.name
                 FROM sys.server_role_members srm2
                 JOIN sys.server_principals sp2 ON srm2.role_principal_id = sp2.principal_id
@@ -49,6 +49,14 @@ GROUP BY sp.name, sp.type_desc, sp.default_database_name, sp.create_date, sp.mod
          perm.class_desc, perm.permission_name, perm.state_desc, perm.major_id, roles.RolePath, sp.sid, sl.is_policy_checked, sl.is_expiration_checked
 ';
 
+-- Muy importante: escapamos las comillas simples duplicándolas
+SET @SQL = REPLACE(@SQL, '''', '''''');
 
-EXEC (@SQL)
+-- Construimos el OPENQUERY con el SQL escapado y encerrado entre comillas simples
+DECLARE @OpenQuery NVARCHAR(MAX);
+SET @OpenQuery = N'SELECT * FROM OPENQUERY(' + QUOTENAME(@ServerName) + N', ''' + @SQL + N''')';
+
+-- Ejecutamos el SQL dinámico
+--PRINT @OpenQuery
+EXEC (@OpenQuery);
 
