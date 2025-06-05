@@ -1,6 +1,7 @@
--- Paso 1: Crear tabla temporal para almacenar resultados
+-- Elimina tabla temporal si existe
 IF OBJECT_ID('tempdb..#EspacioDB') IS NOT NULL DROP TABLE #EspacioDB;
 
+-- Crea tabla temporal SIN columnas calculadas
 CREATE TABLE #EspacioDB (
     BASE_DATOS NVARCHAR(128),
     NOMBRE_ARCHIVO NVARCHAR(128),
@@ -8,36 +9,51 @@ CREATE TABLE #EspacioDB (
     TIPO NVARCHAR(60),
     TAMANO_GB DECIMAL(10,2),
     USADO_GB DECIMAL(10,2),
-    LIBRE_GB AS (TAMANO_GB - USADO_GB) PERSISTED,
-    PORC_USADO AS (CAST(100.0 * USADO_GB / NULLIF(TAMANO_GB,0) AS DECIMAL(5,2))) PERSISTED,
-    PORC_LIBRE AS (100.0 - PORC_USADO),
+    LIBRE_GB DECIMAL(10,2),
+    PORC_USADO DECIMAL(5,2),
+    PORC_LIBRE DECIMAL(5,2),
     SUGERENCIA NVARCHAR(MAX)
 );
 
--- Paso 2: Ejecutar el análisis sobre cada base
+-- Ejecuta por cada base de datos
 EXEC sp_MSforeachdb '
 USE [?];
-IF DB_ID() NOT IN (1,2,3,4)
+IF DB_ID() NOT IN (1,2,3,4) -- Excluir bases de sistema
 BEGIN
-    INSERT INTO #EspacioDB (BASE_DATOS, NOMBRE_ARCHIVO, DISCO, TIPO, TAMANO_GB, USADO_GB, SUGERENCIA)
+    INSERT INTO #EspacioDB (
+        BASE_DATOS, NOMBRE_ARCHIVO, DISCO, TIPO, TAMANO_GB, USADO_GB, LIBRE_GB, PORC_USADO, PORC_LIBRE, SUGERENCIA
+    )
     SELECT
         DB_NAME(),
         df.name,
         LEFT(df.physical_name, 1),
         df.type_desc,
-        CAST(df.size * 8.0 / 1024 / 1024 AS DECIMAL(10,2)),
-        CAST(FILEPROPERTY(df.name, ''SpaceUsed'') * 8.0 / 1024 / 1024 AS DECIMAL(10,2)),
+        CAST(df.size * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS TAMANO_GB,
+        CAST(FILEPROPERTY(df.name, ''SpaceUsed'') * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS USADO_GB,
+        CAST((df.size - FILEPROPERTY(df.name, ''SpaceUsed'')) * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS LIBRE_GB,
+        CAST(
+            CASE WHEN df.size > 0 THEN
+                (CAST(FILEPROPERTY(df.name, ''SpaceUsed'') AS FLOAT) / df.size) * 100
+            ELSE 0 END
+        AS DECIMAL(5,2)) AS PORC_USADO,
+        CAST(
+            CASE WHEN df.size > 0 THEN
+                (1 - (CAST(FILEPROPERTY(df.name, ''SpaceUsed'') AS FLOAT) / df.size)) * 100
+            ELSE 0 END
+        AS DECIMAL(5,2)) AS PORC_LIBRE,
         CASE 
-            WHEN df.type_desc = ''ROWS'' AND (df.size - FILEPROPERTY(df.name, ''SpaceUsed'')) * 8.0 / 1024 / 1024 > 2 
+            WHEN df.type_desc = ''ROWS'' AND (df.size - FILEPROPERTY(df.name, ''SpaceUsed'')) * 8.0 / 1024 / 1024 > 2
                 THEN ''RECOMENDADO: DBCC SHRINKFILE(['' + df.name + ''], TRUNCATEONLY)''
             ELSE ''No se recomienda''
-        END
+        END AS SUGERENCIA
     FROM sys.database_files df
     WHERE df.type IN (0,1);
 END
 ';
 
--- Paso 3: Generar el HTML con los datos
+-- Aquí podrías usar SELECT * FROM #EspacioDB para revisar los resultados.
+
+-- Genera HTML
 DECLARE @HTML NVARCHAR(MAX) = '';
 
 SET @HTML = '
@@ -58,7 +74,7 @@ SET @HTML = '
 </tr>
 ';
 
--- Paso 4: Construir HTML dinámico desde los datos
+-- Leer los datos desde la tabla temporal
 DECLARE @DB NVARCHAR(128), @File NVARCHAR(128), @Disk CHAR(1), @Tipo NVARCHAR(60)
 DECLARE @Tamano DECIMAL(10,2), @Usado DECIMAL(10,2), @Libre DECIMAL(10,2), @PU DECIMAL(5,2), @PL DECIMAL(5,2)
 DECLARE @Sug NVARCHAR(MAX)
@@ -95,7 +111,8 @@ BEGIN
 END
 CLOSE cur; DEALLOCATE cur;
 
+-- Finaliza tabla HTML
 SET @HTML += '</table>';
 
--- Mostrar resultado final
+-- Muestra resultado
 SELECT @HTML AS Reporte_HTML;
