@@ -1,0 +1,43 @@
+-- Crear la tabla de log si no existe
+IF OBJECT_ID('dbo.LogLinkedServers') IS NULL
+BEGIN
+    CREATE TABLE dbo.LogLinkedServers (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        LinkedServerName SYSNAME,
+        Estado VARCHAR(10),
+        Fecha DATETIME,
+        ErrorMsg NVARCHAR(4000)
+    );
+END
+
+-- Crear tabla temporal con los linked servers
+IF OBJECT_ID('tempdb..#LinkedServers') IS NOT NULL DROP TABLE #LinkedServers;
+
+SELECT ROW_NUMBER() OVER (ORDER BY name) AS RowNum,
+       name AS LinkedServerName
+INTO #LinkedServers
+FROM sys.servers
+WHERE is_linked = 1;
+
+DECLARE @MaxRow INT = (SELECT COUNT(*) FROM #LinkedServers);
+DECLARE @Row INT = 1;
+DECLARE @LinkedServerName SYSNAME;
+
+WHILE @Row <= @MaxRow
+BEGIN
+    SELECT @LinkedServerName = LinkedServerName
+    FROM #LinkedServers
+    WHERE RowNum = @Row;
+
+    BEGIN TRY
+        EXEC sp_testlinkedserver @LinkedServerName;
+        INSERT INTO dbo.LogLinkedServers (LinkedServerName, Estado, Fecha, ErrorMsg)
+        VALUES (@LinkedServerName, 'OK', GETDATE(), NULL);
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.LogLinkedServers (LinkedServerName, Estado, Fecha, ErrorMsg)
+        VALUES (@LinkedServerName, 'FALLO', GETDATE(), ERROR_MESSAGE());
+    END CATCH;
+
+    SET @Row += 1;
+END
