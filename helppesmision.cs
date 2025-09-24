@@ -29,3 +29,25 @@ public static class PermissionHelper
         }
     }
 }
+
+
+
+
+
+<ul class="nav navbar-nav">
+    @foreach (var module in BitacoraMvc.Helpers.PermissionHelper.GetAccessibleModules())
+    {
+        if (module == "Productos")
+        {
+            <li>@Html.ActionLink("Productos", "Index", "Productos")</li>
+        }
+        else if (module == "Ventas")
+        {
+            <li>@Html.ActionLink("Ventas", "Index", "Ventas")</li>
+        }
+        else if (module == "Solicitudes")
+        {
+            <li>@Html.ActionLink("Solicitudes", "Index", "SolicitudPermisos")</li>
+        }
+    }
+</ul>
