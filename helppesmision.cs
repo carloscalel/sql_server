@@ -1,46 +1,28 @@
 @using BitacoraMvc.Helpers
+@using BitacoraMvc.Models
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="@Url.Action("Index","Home")">Mi App</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" 
-                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav me-auto">
-                <!-- Dropdown único para todos los módulos -->
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="dropdownModules" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Módulos
+<div class="d-flex">
+    <!-- Sidebar -->
+    <nav class="flex-column bg-dark text-white p-3" style="width: 220px; min-height: 100vh;">
+        <h5 class="text-white">Mi App</h5>
+        <hr class="text-white">
+        <ul class="nav nav-pills flex-column">
+            @foreach (var module in PermissionHelper.GetAccessibleModules())
+            {
+                <li class="nav-item mb-1">
+                    <a class="nav-link text-white" href="@Url.Action("Index", module)">
+                        @module
                     </a>
-                    <ul class="dropdown-menu" aria-labelledby="dropdownModules">
-                        @foreach (var module in PermissionHelper.GetAccessibleModules())
-                        {
-                            <li>
-                                <a class="dropdown-item" href="@Url.Action("Index", module)">
-                                    @module
-                                </a>
-                            </li>
-                        }
-                    </ul>
                 </li>
+            }
+        </ul>
+    </nav>
 
-                <!-- Otros enlaces fijos si los hay -->
-                <li class="nav-item">
-                    <a class="nav-link" href="@Url.Action("About","Home")">About</a>
-                </li>
-            </ul>
-
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item">
-                    <span class="navbar-text">@User.Identity.Name</span>
-                </li>
-            </ul>
-        </div>
+    <!-- Contenido principal -->
+    <div class="flex-grow-1 p-3">
+        @RenderBody()
     </div>
-</nav>
+</div>
 
-<!-- Bootstrap JS bundle -->
+<!-- Bootstrap JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
