@@ -146,3 +146,33 @@ END
         }
     }
 </ul>
+
+
+
+<ul class="nav navbar-nav">
+    @foreach (var module in BitacoraMvc.Helpers.PermissionHelper.GetAccessibleModules())
+    {
+        <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="dropdown_@module" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                @module
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="dropdown_@module">
+                @* Como en esta versión solo tenemos Index por módulo *@
+                <li>
+                    @if (module == "Productos")
+                    {
+                        <a class="dropdown-item" href="@Url.Action("Index", "Productos")">Ir a Productos</a>
+                    }
+                    else if (module == "Ventas")
+                    {
+                        <a class="dropdown-item" href="@Url.Action("Index", "Ventas")">Ir a Ventas</a>
+                    }
+                    else if (module == "Solicitudes")
+                    {
+                        <a class="dropdown-item" href="@Url.Action("Index", "SolicitudPermisos")">Ir a Solicitudes</a>
+                    }
+                </li>
+            </ul>
+        </li>
+    }
+</ul>
