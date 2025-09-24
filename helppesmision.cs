@@ -103,3 +103,46 @@ BEGIN
     INSERT INTO RolePermissions (RoleId, PermissionId)
     VALUES (@RoleId, @NewPermissionId);
 END
+
+
+
+
+@using BitacoraMvc.Helpers
+@using BitacoraMvc.Models
+
+@{
+    // Traer todas las acciones que el usuario puede ejecutar
+    var accessibleActions = PermissionHelper.GetAccessibleActions(); 
+}
+
+<ul class="nav navbar-nav">
+    @foreach (var module in BitacoraMvc.Helpers.PermissionHelper.GetAccessibleModules())
+    {
+        // Agrupar acciones por módulo
+        var actionsForModule = accessibleActions
+                               .Where(a => a.Module == module)
+                               .Select(a => a.Action)
+                               .Distinct()
+                               .ToList();
+
+        if (actionsForModule.Any())
+        {
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" id="dropdown_@module" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    @module
+                </a>
+                <ul class="dropdown-menu" aria-labelledby="dropdown_@module">
+                    @foreach (var action in actionsForModule)
+                    {
+                        <li>
+                            @* Ajusta los nombres de acciones a las URLs de tus controladores *@
+                            <a class="dropdown-item" href="@Url.Action(action, module)">
+                                @action
+                            </a>
+                        </li>
+                    }
+                </ul>
+            </li>
+        }
+    }
+</ul>
