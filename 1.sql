@@ -1,17 +1,26 @@
--- Tamaño total de la BD y espacio no asignado
-SELECT 
-    DB_NAME() AS database_name,
-    CAST(SUM(size) * 8.0 / 1024 AS DECIMAL(10,2)) AS database_size_MB,
-    CAST(SUM(size) * 8.0 / 1024 
-        - CAST(SUM(FILEPROPERTY(name, 'SpaceUsed')) * 8.0 / 1024 AS DECIMAL(10,2)) AS DECIMAL(10,2)) AS unallocated_space_MB
-FROM sys.database_files;
+-- Base de datos
+CREATE TABLE #DB_SpaceUsed (
+    database_name SYSNAME,
+    database_size NVARCHAR(50),
+    unallocated_space NVARCHAR(50),
+    reserved NVARCHAR(50),
+    data NVARCHAR(50),
+    index_size NVARCHAR(50),
+    unused NVARCHAR(50)
+);
 
--- Detalle del espacio usado en la BD
-SELECT 
-    CAST(SUM(a.total_pages) * 8.0 / 1024 AS DECIMAL(10,2)) AS reserved_MB,
-    CAST(SUM(a.used_pages) * 8.0 / 1024 AS DECIMAL(10,2)) AS data_MB,
-    CAST((SUM(a.used_pages) - SUM(a.data_pages)) * 8.0 / 1024 AS DECIMAL(10,2)) AS index_size_MB,
-    CAST((SUM(a.total_pages) - SUM(a.used_pages)) * 8.0 / 1024 AS DECIMAL(10,2)) AS unused_MB
-FROM sys.allocation_units a
-JOIN sys.partitions p 
-    ON a.container_id = p.hobt_id;
+INSERT INTO #DB_SpaceUsed
+EXEC sp_spaceused
+WITH RESULT SETS (
+    (
+        database_name SYSNAME,
+        database_size NVARCHAR(50),
+        unallocated_space NVARCHAR(50),
+        reserved NVARCHAR(50),
+        data NVARCHAR(50),
+        index_size NVARCHAR(50),
+        unused NVARCHAR(50)
+    )
+);
+
+SELECT * FROM #DB_SpaceUsed;
