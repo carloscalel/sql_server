@@ -1,26 +1,26 @@
--- Base de datos
-CREATE TABLE #DB_SpaceUsed (
-    database_name SYSNAME,
-    database_size NVARCHAR(50),
-    unallocated_space NVARCHAR(50),
-    reserved NVARCHAR(50),
-    data NVARCHAR(50),
-    index_size NVARCHAR(50),
-    unused NVARCHAR(50)
-);
+DECLARE 
+    @database_size NVARCHAR(50),
+    @unallocated_space NVARCHAR(50),
+    @reserved NVARCHAR(50),
+    @data NVARCHAR(50),
+    @index_size NVARCHAR(50),
+    @unused NVARCHAR(50);
 
-INSERT INTO #DB_SpaceUsed
-EXEC sp_spaceused
-WITH RESULT SETS (
-    (
-        database_name SYSNAME,
-        database_size NVARCHAR(50),
-        unallocated_space NVARCHAR(50),
-        reserved NVARCHAR(50),
-        data NVARCHAR(50),
-        index_size NVARCHAR(50),
-        unused NVARCHAR(50)
-    )
-);
+-- Ejecutar sp_spaceused con variables OUTPUT
+EXEC sp_spaceused 
+     @updateusage = N'TRUE', 
+     @database_size = @database_size OUTPUT, 
+     @unallocated_space = @unallocated_space OUTPUT, 
+     @reserved = @reserved OUTPUT, 
+     @data = @data OUTPUT, 
+     @index_size = @index_size OUTPUT, 
+     @unused = @unused OUTPUT;
 
-SELECT * FROM #DB_SpaceUsed;
+-- Ver resultados
+SELECT 
+    @database_size AS database_size,
+    @unallocated_space AS unallocated_space,
+    @reserved AS reserved,
+    @data AS data,
+    @index_size AS index_size,
+    @unused AS unused;
