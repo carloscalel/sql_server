@@ -1,11 +1,13 @@
+USE TuBaseDeDatos;
+GO
+
 SELECT 
-    DB_NAME(database_id) AS DatabaseName,
-    name AS LogicalFileName,
-    physical_name AS FilePath,
-    size * 8 / 1024 AS SizeMB,
-    CASE is_percent_growth 
-        WHEN 1 THEN CAST(growth AS VARCHAR(10)) + '%' 
-        ELSE CAST(growth * 8 / 1024 AS VARCHAR(10)) + ' MB' 
-    END AS GrowthSetting
-FROM sys.master_files
-WHERE type_desc = 'ROWS';  -- Solo Data (MDF/NDF)
+    df.name AS LogicalFileName,
+    df.physical_name AS FilePath,
+    df.type_desc AS FileType,
+    (df.size * 8) / 1024 AS FileSizeMB, -- Tamaño total en MB
+    CAST(FILEPROPERTY(df.name, 'SpaceUsed') * 8.0 / 1024 AS DECIMAL(10,2)) AS SpaceUsedMB, -- Usado
+    ((df.size - FILEPROPERTY(df.name, 'SpaceUsed')) * 8.0 / 1024) AS FreeSpaceMB, -- Libre
+    CAST(100.0 * (df.size - FILEPROPERTY(df.name, 'SpaceUsed')) / df.size AS DECIMAL(5,2)) AS FreeSpacePct -- % Libre
+FROM sys.database_files df
+WHERE df.type_desc = 'ROWS'; -- Solo MDF/NDF
