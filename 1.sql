@@ -14,4 +14,4 @@ WHERE df.type_desc = 'ROWS'; -- Solo MDF/NDF
 
 
 
-https://teams.microsoft.com/l/meetup-join/19%3ameeting_MjgyN2E2MDgtYzljMC00MjQxLWE2Y2ItNWY3Mjc0OGVkNmQ2%40thread.v2/0?context=%7b%22Tid%22%3a%224f1d8a3a-c21d-4415-9a3e-d743e350dc3c%22%2c%22Oid%22%3a%223ff34afa-9ec5-486d-bf1d-209101ca9113%22%7d
+https://teams.microsoft.com/meet/220080073283?p=d8eOuxNLZAAiBhkSyq
