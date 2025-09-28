@@ -1,23 +1,11 @@
-CREATE TABLE #DB_SpaceUsed (
-    database_name SYSNAME,
-    database_size NVARCHAR(50),
-    unallocated_space NVARCHAR(50)
-);
-
-CREATE TABLE #DB_SpaceUsedDetail (
-    reserved NVARCHAR(50),
-    data NVARCHAR(50),
-    index_size NVARCHAR(50),
-    unused NVARCHAR(50)
-);
-
--- Primer resultset
-INSERT INTO #DB_SpaceUsed (database_name, database_size, unallocated_space)
-EXEC sp_spaceused;
-
--- Segundo resultset
-INSERT INTO #DB_SpaceUsedDetail (reserved, data, index_size, unused)
-EXEC sp_spaceused;
-
-SELECT * FROM #DB_SpaceUsed;
-SELECT * FROM #DB_SpaceUsedDetail;
+SELECT 
+    DB_NAME(database_id) AS DatabaseName,
+    name AS LogicalFileName,
+    physical_name AS FilePath,
+    size * 8 / 1024 AS SizeMB,
+    CASE is_percent_growth 
+        WHEN 1 THEN CAST(growth AS VARCHAR(10)) + '%' 
+        ELSE CAST(growth * 8 / 1024 AS VARCHAR(10)) + ' MB' 
+    END AS GrowthSetting
+FROM sys.master_files
+WHERE type_desc = 'ROWS';  -- Solo Data (MDF/NDF)
