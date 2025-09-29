@@ -1,17 +1,66 @@
-USE TuBaseDeDatos;
-GO
+@model IEnumerable<dynamic> 
+@{
+    ViewBag.Title = ViewBag.Title ?? "Listado";
+}
 
-SELECT 
-    df.name AS LogicalFileName,
-    df.physical_name AS FilePath,
-    df.type_desc AS FileType,
-    (df.size * 8) / 1024 AS FileSizeMB, -- Tamaño total en MB
-    CAST(FILEPROPERTY(df.name, 'SpaceUsed') * 8.0 / 1024 AS DECIMAL(10,2)) AS SpaceUsedMB, -- Usado
-    ((df.size - FILEPROPERTY(df.name, 'SpaceUsed')) * 8.0 / 1024) AS FreeSpaceMB, -- Libre
-    CAST(100.0 * (df.size - FILEPROPERTY(df.name, 'SpaceUsed')) / df.size AS DECIMAL(5,2)) AS FreeSpacePct -- % Libre
-FROM sys.database_files df
-WHERE df.type_desc = 'ROWS'; -- Solo MDF/NDF
+<h2>@ViewBag.Title</h2>
 
+<!-- Tabla genérica con Bootstrap 5 -->
+<table id="dataTable" class="table table-striped table-bordered">
+    <thead class="table-dark">
+        <tr>
+            <!-- Encabezados dinámicos -->
+            @if (Model != null && Model.Any())
+            {
+                var props = Model.First().GetType().GetProperties();
+                foreach (var prop in props)
+                {
+                    <th>@prop.Name</th>
+                }
+                <th>Acciones</th>
+            }
+            else
+            {
+                <th>Sin datos disponibles</th>
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model != null && Model.Any())
+        {
+            foreach (var item in Model)
+            {
+                <tr>
+                    @foreach (var prop in item.GetType().GetProperties())
+                    {
+                        <td>@prop.GetValue(item, null)</td>
+                    }
+                    <td>
+                        <!-- Botones de acción genéricos -->
+                        @Html.ActionLink("Editar", "Edit", new { id = item.GetType().GetProperty("Id")?.GetValue(item) }, new { @class = "btn btn-sm btn-warning" }) 
+                        @Html.ActionLink("Detalles", "Details", new { id = item.GetType().GetProperty("Id")?.GetValue(item) }, new { @class = "btn btn-sm btn-info" }) 
+                        @Html.ActionLink("Eliminar", "Delete", new { id = item.GetType().GetProperty("Id")?.GetValue(item) }, new { @class = "btn btn-sm btn-danger" })
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
 
-
-https://teams.microsoft.com/meet/220080073283?p=d8eOuxNLZAAiBhkSyq
+@section Scripts {
+    <!-- DataTables + Bootstrap 5 configuración -->
+    <script>
+        $(document).ready(function () {
+            $('#dataTable').DataTable({
+                "language": {
+                    "url": "//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json"
+                },
+                "pageLength": 10,
+                "lengthMenu": [5, 10, 25, 50],
+                "ordering": true,
+                "searching": true,
+                "responsive": true
+            });
+        });
+    </script>
+}
