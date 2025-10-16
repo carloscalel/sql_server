@@ -1,85 +1,132 @@
-CREATE TABLE dbo.Monitoreo_UsoObjetos (
-    FechaCaptura DATETIME NOT NULL DEFAULT GETDATE(),
-    TipoObjeto NVARCHAR(50),
-    Esquema NVARCHAR(128),
-    NombreObjeto NVARCHAR(256),
-    UltimoUso DATETIME NULL,
-    VecesUsado BIGINT NULL,
-    TotalCPU_ms BIGINT NULL,
-    TotalTiempo_ms BIGINT NULL
-);
+/****************************************************************************************
+ Script:       00_setup_masking_framework.sql
+ Descripción:  Inicializa el framework de enmascaramiento automático.
+               Crea los esquemas, tablas de metadatos y registra patrones sensibles.
+
+ Versión:      3.0
+ Autor:        Framework SQL Masking (ChatGPT)
+****************************************************************************************/
+
+PRINT '============================================================';
+PRINT ' INICIALIZANDO FRAMEWORK DE ENMASCARAMIENTO (v3.0)';
+PRINT '============================================================';
+PRINT '';
+
+------------------------------------------------------------
+-- 1. CREAR ESQUEMAS BASE
+------------------------------------------------------------
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'masked')
+BEGIN
+    EXEC('CREATE SCHEMA masked;');
+    PRINT '>> Esquema [masked] creado.';
+END
+ELSE
+    PRINT '>> Esquema [masked] ya existe.';
+
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'app')
+BEGIN
+    EXEC('CREATE SCHEMA app;');
+    PRINT '>> Esquema [app] creado.';
+END
+ELSE
+    PRINT '>> Esquema [app] ya existe.';
+
+------------------------------------------------------------
+-- 2. TABLA DE BITÁCORA
+------------------------------------------------------------
+IF OBJECT_ID('masked.Bitacora_Masking') IS NULL
+BEGIN
+    CREATE TABLE masked.Bitacora_Masking (
+        Id INT IDENTITY PRIMARY KEY,
+        Fecha DATETIME DEFAULT GETDATE(),
+        Tabla NVARCHAR(128),
+        Columna NVARCHAR(128),
+        TipoOperacion NVARCHAR(50),
+        UsuarioEjecutor NVARCHAR(128) DEFAULT ORIGINAL_LOGIN(),
+        Detalle NVARCHAR(MAX)
+    );
+    PRINT '>> Tabla [masked.Bitacora_Masking] creada.';
+END
+ELSE
+    PRINT '>> Tabla [masked.Bitacora_Masking] ya existe.';
 
 
-INSERT INTO dbo.Monitoreo_UsoObjetos (TipoObjeto, Esquema, NombreObjeto, UltimoUso, VecesUsado, TotalCPU_ms, TotalTiempo_ms)
--- Procedimientos y funciones
-SELECT 
-    'Procedimiento/Función' AS TipoObjeto,
-    OBJECT_SCHEMA_NAME(ps.object_id) AS Esquema,
-    OBJECT_NAME(ps.object_id) AS NombreObjeto,
-    ps.last_execution_time AS UltimoUso,
-    ps.execution_count AS VecesUsado,
-    ps.total_worker_time / 1000 AS TotalCPU_ms,
-    ps.total_elapsed_time / 1000 AS TotalTiempo_ms
-FROM sys.dm_exec_procedure_stats AS ps
-WHERE ps.database_id = DB_ID()
-UNION ALL
--- Vistas y tablas (a partir de índices usados)
-SELECT 
-    CASE o.type WHEN 'V' THEN 'Vista' ELSE 'Tabla' END AS TipoObjeto,
-    s.name AS Esquema,
-    o.name AS NombreObjeto,
-    MAX(us.last_user_seek) AS UltimoUso,
-    SUM(us.user_seeks + us.user_scans + us.user_lookups + us.user_updates) AS VecesUsado,
-    NULL AS TotalCPU_ms,
-    NULL AS TotalTiempo_ms
-FROM sys.dm_db_index_usage_stats AS us
-JOIN sys.objects AS o ON us.object_id = o.object_id
-JOIN sys.schemas AS s ON o.schema_id = s.schema_id
-WHERE us.database_id = DB_ID()
-  AND o.type IN ('U', 'V')  -- U = tablas, V = vistas
-GROUP BY s.name, o.name, o.type;
+------------------------------------------------------------
+-- 3. TABLA DE PATRONES
+------------------------------------------------------------
+IF OBJECT_ID('masked.Patrones_Masking') IS NULL
+BEGIN
+    CREATE TABLE masked.Patrones_Masking (
+        Id INT IDENTITY PRIMARY KEY,
+        Patron NVARCHAR(100) NOT NULL,
+        Metodo NVARCHAR(200) NOT NULL,
+        Activo BIT DEFAULT 1,
+        FechaRegistro DATETIME DEFAULT GETDATE()
+    );
+    PRINT '>> Tabla [masked.Patrones_Masking] creada.';
+END
+ELSE
+    PRINT '>> Tabla [masked.Patrones_Masking] ya existe.';
 
 
-
-CREATE TABLE dbo.Monitoreo_Usuarios_Scripts (
-    FechaCaptura DATETIME NOT NULL DEFAULT GETDATE(),
-    Usuario SYSNAME,
-    Host SYSNAME,
-    BaseDatos SYSNAME,
-    Estado NVARCHAR(50),
-    InicioEjecucion DATETIME,
-    Duracion_Segundos INT,
-    ScriptEjecutado NVARCHAR(MAX),
-    ComandoSQL NVARCHAR(200),
-    CPU_ms INT,
-    TiempoTotal_ms BIGINT
-);
-
-INSERT INTO dbo.Monitoreo_Usuarios_Scripts
-(
-    Usuario, Host, BaseDatos, Estado, InicioEjecucion, Duracion_Segundos,
-    ScriptEjecutado, ComandoSQL, CPU_ms, TiempoTotal_ms
-)
-SELECT 
-    s.login_name AS Usuario,
-    s.host_name AS Host,
-    DB_NAME(r.database_id) AS BaseDatos,
-    r.status AS Estado,
-    r.start_time AS InicioEjecucion,
-    DATEDIFF(SECOND, r.start_time, GETDATE()) AS Duracion_Segundos,
-    LEFT(st.text, 4000) AS ScriptEjecutado,  -- Limitamos tamaño por seguridad
-    r.command AS ComandoSQL,
-    r.cpu_time AS CPU_ms,
-    r.total_elapsed_time AS TiempoTotal_ms
-FROM sys.dm_exec_requests AS r
-INNER JOIN sys.dm_exec_sessions AS s ON r.session_id = s.session_id
-CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS st
-WHERE s.is_user_process = 1;
+------------------------------------------------------------
+-- 4. TABLA DE CONTROL DE TABLAS ENMASCARADAS
+------------------------------------------------------------
+IF OBJECT_ID('masked.Tablas_Control') IS NULL
+BEGIN
+    CREATE TABLE masked.Tablas_Control (
+        Id INT IDENTITY PRIMARY KEY,
+        Esquema NVARCHAR(128),
+        Tabla NVARCHAR(128),
+        TipoAplicacion NVARCHAR(50),  -- DIRECTO o VISTA
+        Fecha DATETIME DEFAULT GETDATE(),
+        UsuarioEjecutor NVARCHAR(128) DEFAULT ORIGINAL_LOGIN()
+    );
+    PRINT '>> Tabla [masked.Tablas_Control] creada.';
+END
+ELSE
+    PRINT '>> Tabla [masked.Tablas_Control] ya existe.';
 
 
--- Mantener solo los últimos 30 días de registros
-DELETE FROM dbo.Monitoreo_Usuarios_Scripts
-WHERE FechaCaptura < DATEADD(DAY, -30, GETDATE());
+------------------------------------------------------------
+-- 5. INSERTAR PATRONES DE ENMASCARAMIENTO
+------------------------------------------------------------
+PRINT 'Insertando patrones predefinidos...';
 
-DELETE FROM dbo.Monitoreo_UsoObjetos
-WHERE FechaCaptura < DATEADD(DAY, -30, GETDATE());
+DELETE FROM masked.Patrones_Masking;
+
+INSERT INTO masked.Patrones_Masking (Patron, Metodo)
+VALUES
+('TARJETA','partial(0,"XXXXXXXXXXXXXXX",4)'),
+('CUENTA','partial(0,"XXXXXXXXXXXX",4)'),
+('CODIGO','partial(6,"XXXXXX",4)'),
+('AUTENTICACION','partial(6,"XXXXXX",4)'),
+('MAGNETICA','partial(6,"XXXXXX",4)'),
+('CV2','partial(6,"XXXXXX",4)'),
+('CVV2','partial(6,"XXXXXX",4)'),
+-- ('CID','partial(6,"XXXXXX",4)'),  -- Omitido según tu preferencia
+('BIN','partial(6,"XXXXXX",4)'),
+('FECHA_V','default()'),
+('NOM_','partial(10,"XXXXXXXXXXXXXXXXXXXX",0)'),
+('EMAIL','email()'),
+('NACIMIENTO','default()'),
+('BLOQUEO','default()'),
+('TOKEN','default()'),
+('NIT','default()'),
+('DIRECCION','default()'),
+('DIR_','default()'),
+('TEL','default()'),
+('TELEFONO','default()');
+
+PRINT '>> Patrones insertados correctamente.';
+PRINT '';
+
+------------------------------------------------------------
+-- 6. MENSAJE FINAL
+------------------------------------------------------------
+PRINT '============================================================';
+PRINT ' FRAMEWORK DE ENMASCARAMIENTO CONFIGURADO CORRECTAMENTE';
+PRINT ' Esquemas creados: [masked], [app]';
+PRINT ' Tablas: Bitacora_Masking, Patrones_Masking, Tablas_Control';
+PRINT '============================================================';
+GO
