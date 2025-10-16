@@ -1,35 +1,22 @@
 /****************************************************************************************
  Script:       00_setup_masking_framework.sql
  Descripción:  Inicializa el framework de enmascaramiento automático.
-               Crea los esquemas, tablas de metadatos y registra patrones sensibles.
+               Crea esquemas, tablas base, bitácora y carga patrones de búsqueda.
 
- Versión:      3.0
- Autor:        Framework SQL Masking (ChatGPT)
+ Versión:      3.1
 ****************************************************************************************/
 
 PRINT '============================================================';
-PRINT ' INICIALIZANDO FRAMEWORK DE ENMASCARAMIENTO (v3.0)';
+PRINT ' INICIALIZANDO FRAMEWORK DE ENMASCARAMIENTO (v3.1)';
 PRINT '============================================================';
-PRINT '';
 
 ------------------------------------------------------------
 -- 1. CREAR ESQUEMAS BASE
 ------------------------------------------------------------
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'masked')
-BEGIN
     EXEC('CREATE SCHEMA masked;');
-    PRINT '>> Esquema [masked] creado.';
-END
-ELSE
-    PRINT '>> Esquema [masked] ya existe.';
-
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'app')
-BEGIN
     EXEC('CREATE SCHEMA app;');
-    PRINT '>> Esquema [app] creado.';
-END
-ELSE
-    PRINT '>> Esquema [app] ya existe.';
 
 ------------------------------------------------------------
 -- 2. TABLA DE BITÁCORA
@@ -45,29 +32,22 @@ BEGIN
         UsuarioEjecutor NVARCHAR(128) DEFAULT ORIGINAL_LOGIN(),
         Detalle NVARCHAR(MAX)
     );
-    PRINT '>> Tabla [masked.Bitacora_Masking] creada.';
 END
-ELSE
-    PRINT '>> Tabla [masked.Bitacora_Masking] ya existe.';
-
 
 ------------------------------------------------------------
--- 3. TABLA DE PATRONES
+-- 3. TABLA DE PATRONES (estructura original)
 ------------------------------------------------------------
-IF OBJECT_ID('masked.Patrones_Masking') IS NULL
+IF OBJECT_ID('masked.Masked_Patterns') IS NULL
 BEGIN
-    CREATE TABLE masked.Patrones_Masking (
+    CREATE TABLE masked.Masked_Patterns (
         Id INT IDENTITY PRIMARY KEY,
-        Patron NVARCHAR(100) NOT NULL,
-        Metodo NVARCHAR(200) NOT NULL,
+        Pattern NVARCHAR(100),
+        DDMFunction NVARCHAR(200),
+        ViewMaskExpr NVARCHAR(400),
         Activo BIT DEFAULT 1,
         FechaRegistro DATETIME DEFAULT GETDATE()
     );
-    PRINT '>> Tabla [masked.Patrones_Masking] creada.';
 END
-ELSE
-    PRINT '>> Tabla [masked.Patrones_Masking] ya existe.';
-
 
 ------------------------------------------------------------
 -- 4. TABLA DE CONTROL DE TABLAS ENMASCARADAS
@@ -78,55 +58,43 @@ BEGIN
         Id INT IDENTITY PRIMARY KEY,
         Esquema NVARCHAR(128),
         Tabla NVARCHAR(128),
-        TipoAplicacion NVARCHAR(50),  -- DIRECTO o VISTA
+        TipoAplicacion NVARCHAR(50), -- DIRECTO o VISTA
         Fecha DATETIME DEFAULT GETDATE(),
         UsuarioEjecutor NVARCHAR(128) DEFAULT ORIGINAL_LOGIN()
     );
-    PRINT '>> Tabla [masked.Tablas_Control] creada.';
 END
-ELSE
-    PRINT '>> Tabla [masked.Tablas_Control] ya existe.';
-
 
 ------------------------------------------------------------
--- 5. INSERTAR PATRONES DE ENMASCARAMIENTO
+-- 5. CARGAR PATRONES PERSONALIZADOS
 ------------------------------------------------------------
-PRINT 'Insertando patrones predefinidos...';
+DELETE FROM masked.Masked_Patterns;
 
-DELETE FROM masked.Patrones_Masking;
-
-INSERT INTO masked.Patrones_Masking (Patron, Metodo)
+INSERT INTO masked.Masked_Patterns (Pattern, DDMFunction, ViewMaskExpr)
 VALUES
-('TARJETA','partial(0,"XXXXXXXXXXXXXXX",4)'),
-('CUENTA','partial(0,"XXXXXXXXXXXX",4)'),
-('CODIGO','partial(6,"XXXXXX",4)'),
-('AUTENTICACION','partial(6,"XXXXXX",4)'),
-('MAGNETICA','partial(6,"XXXXXX",4)'),
-('CV2','partial(6,"XXXXXX",4)'),
-('CVV2','partial(6,"XXXXXX",4)'),
--- ('CID','partial(6,"XXXXXX",4)'),  -- Omitido según tu preferencia
-('BIN','partial(6,"XXXXXX",4)'),
-('FECHA_V','default()'),
-('NOM_','partial(10,"XXXXXXXXXXXXXXXXXXXX",0)'),
-('EMAIL','email()'),
-('NACIMIENTO','default()'),
-('BLOQUEO','default()'),
-('TOKEN','default()'),
-('NIT','default()'),
-('DIRECCION','default()'),
-('DIR_','default()'),
-('TEL','default()'),
-('TELEFONO','default()');
-
-PRINT '>> Patrones insertados correctamente.';
-PRINT '';
+('TARJETA','partial(0,"XXXXXXXXXXXXXXX",4)','LEFT({col},0)+REPLICATE(''X'',15)+RIGHT({col},4)'),
+('CUENTA','partial(0,"XXXXXXXXXXXX",4)','LEFT({col},0)+REPLICATE(''X'',12)+RIGHT({col},4)'),
+('CODIGO','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('AUTENTICACION','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('MAGNETICA','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('CV2','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('CVV2','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('BIN','partial(6,"XXXXXX",4)','LEFT({col},6)+REPLICATE(''X'',6)+RIGHT({col},4)'),
+('FECHA_V','default()','CONVERT(CHAR(10),GETDATE(),120)'),
+('NOM_','partial(10,"XXXXXXXXXXXXXXXXXXXX",0)','LEFT({col},10)+REPLICATE(''X'',20)'),
+('EMAIL','email()','CONCAT(LEFT({col},2),''*****@masked.com'')'),
+('NACIMIENTO','default()','NULL'),
+('BLOQUEO','default()','NULL'),
+('TOKEN','default()','NULL'),
+('NIT','default()','NULL'),
+('DIRECCION','default()','''DIRECCION ENMASCARADA'''),
+('DIR_','default()','''DIRECCION ENMASCARADA'''),
+('TEL','default()','''0000-0000'''),
+('TELEFONO','default()','''0000-0000''');
 
 ------------------------------------------------------------
 -- 6. MENSAJE FINAL
 ------------------------------------------------------------
 PRINT '============================================================';
 PRINT ' FRAMEWORK DE ENMASCARAMIENTO CONFIGURADO CORRECTAMENTE';
-PRINT ' Esquemas creados: [masked], [app]';
-PRINT ' Tablas: Bitacora_Masking, Patrones_Masking, Tablas_Control';
 PRINT '============================================================';
 GO
