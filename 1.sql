@@ -1,24 +1,33 @@
-DECLARE @dbname SYSNAME;
-DECLARE db_cursor CURSOR FOR
-SELECT name FROM sys.databases
-WHERE name LIKE 'TuBD%';  -- o ajusta el filtro a tus BDs restauradas
+-- Esperar a que la BD esté en línea
+DECLARE @dbname SYSNAME = N'TuBD';
+DECLARE @sql NVARCHAR(MAX);
 
-OPEN db_cursor;
-FETCH NEXT FROM db_cursor INTO @dbname;
-
-WHILE @@FETCH_STATUS = 0
+-- Espera activa hasta que la BD esté ONLINE
+WHILE EXISTS (
+    SELECT 1
+    FROM sys.databases
+    WHERE name = @dbname AND state_desc <> 'ONLINE'
+)
 BEGIN
-    DECLARE @sql NVARCHAR(MAX) = '
-    USE [' + @dbname + '];
-    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''usuario_app'')
-    BEGIN
-        CREATE USER [usuario_app] FOR LOGIN [usuario_app];
-        EXEC sp_addrolemember ''db_datareader'', ''usuario_app'';
-        PRINT ''Usuario creado en [' + @dbname + ']'';
-    END';
-    EXEC sp_executesql @sql;
-    FETCH NEXT FROM db_cursor INTO @dbname;
-END
+    WAITFOR DELAY '00:00:05'; -- espera 5 segundos
+END;
 
-CLOSE db_cursor;
-DEALLOCATE db_cursor;
+-- Crear usuario si no existe
+SET @sql = N'
+USE [' + @dbname + '];
+
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''usuario_app'')
+BEGIN
+    CREATE USER [usuario_app] FOR LOGIN [usuario_app];
+    EXEC sp_addrolemember ''db_datareader'', ''usuario_app'';  -- permisos mínimos
+    -- Si necesita escritura:
+    -- EXEC sp_addrolemember ''db_datawriter'', ''usuario_app'';
+    PRINT ''Usuario [usuario_app] creado y asignado correctamente en [' + @dbname + ']'';
+END
+ELSE
+BEGIN
+    PRINT ''Usuario [usuario_app] ya existe en [' + @dbname + ']'';
+END
+';
+
+EXEC sp_executesql @sql;
