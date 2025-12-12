@@ -1,33 +1,36 @@
--- Esperar a que la BD esté en línea
-DECLARE @dbname SYSNAME = N'TuBD';
-DECLARE @sql NVARCHAR(MAX);
+DECLARE 
+    @TableName SYSNAME = 'dbo.TuTabla',
+    @KeyColumns NVARCHAR(MAX) = 'Col1,Col2';   -- columnas del índice
 
--- Espera activa hasta que la BD esté ONLINE
-WHILE EXISTS (
-    SELECT 1
-    FROM sys.databases
-    WHERE name = @dbname AND state_desc <> 'ONLINE'
-)
-BEGIN
-    WAITFOR DELAY '00:00:05'; -- espera 5 segundos
-END;
+DECLARE @ObjectID INT = OBJECT_ID(@TableName);
 
--- Crear usuario si no existe
-SET @sql = N'
-USE [' + @dbname + '];
+-- tamaño total de filas
+DECLARE @RowCount BIGINT;
+SELECT @RowCount = SUM(row_count)
+FROM sys.dm_db_partition_stats
+WHERE object_id = @ObjectID
+  AND index_id IN (0,1); -- heap o clustered
 
-IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''usuario_app'')
-BEGIN
-    CREATE USER [usuario_app] FOR LOGIN [usuario_app];
-    EXEC sp_addrolemember ''db_datareader'', ''usuario_app'';  -- permisos mínimos
-    -- Si necesita escritura:
-    -- EXEC sp_addrolemember ''db_datawriter'', ''usuario_app'';
-    PRINT ''Usuario [usuario_app] creado y asignado correctamente en [' + @dbname + ']'';
-END
-ELSE
-BEGIN
-    PRINT ''Usuario [usuario_app] ya existe en [' + @dbname + ']'';
-END
-';
+-- tamaño total de columnas clave (bytes)
+DECLARE @KeySizeBytes INT;
 
-EXEC sp_executesql @sql;
+SELECT @KeySizeBytes = SUM(
+        CASE 
+            WHEN t.name IN ('varchar','nvarchar','varbinary')
+                THEN CASE c.max_length WHEN -1 THEN 100 ELSE c.max_length END
+            ELSE c.max_length
+        END
+    )
+FROM sys.columns c
+JOIN sys.types t ON c.user_type_id = t.user_type_id
+WHERE c.object_id = @ObjectID
+  AND c.name IN (
+        SELECT LTRIM(RTRIM(value))
+        FROM STRING_SPLIT(@KeyColumns, ',')
+    );
+
+-- estimación final
+SELECT 
+    @RowCount AS TotalRows,
+    @KeySizeBytes AS KeyBytesPerRow,
+    (@RowCount * @KeySizeBytes * 1.2) / 1024 / 1024 AS EstimatedIndexSizeMB;
