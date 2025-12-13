@@ -1,36 +1,33 @@
 DECLARE 
-    @TableName SYSNAME = 'dbo.TuTabla',
-    @KeyColumns NVARCHAR(MAX) = 'Col1,Col2';   -- columnas del índice
+    @LinkedServer sysname = N'CALEL',
+    @DB          sysname = N'AdventureWorks2022',
+    @Schema      sysname = N'Person',
+    @Table       sysname = N'Person';
 
-DECLARE @ObjectID INT = OBJECT_ID(@TableName);
+DECLARE @RemoteProc nvarchar(300) = QUOTENAME(@DB) + N'.sys.sp_spaceused';
+DECLARE @Obj        nvarchar(300) = @Schema + N'.' + @Table;
 
--- tamaño total de filas
-DECLARE @RowCount BIGINT;
-SELECT @RowCount = SUM(row_count)
-FROM sys.dm_db_partition_stats
-WHERE object_id = @ObjectID
-  AND index_id IN (0,1); -- heap o clustered
-
--- tamaño total de columnas clave (bytes)
-DECLARE @KeySizeBytes INT;
-
-SELECT @KeySizeBytes = SUM(
-        CASE 
-            WHEN t.name IN ('varchar','nvarchar','varbinary')
-                THEN CASE c.max_length WHEN -1 THEN 100 ELSE c.max_length END
-            ELSE c.max_length
-        END
+DECLARE @SQL nvarchar(max) =
+N'SELECT *
+  FROM OPENQUERY(' + QUOTENAME(@LinkedServer) + N',
+''SET NOCOUNT ON;
+  EXEC ' + REPLACE(@RemoteProc, '''', '''''') + N' N'''''+ REPLACE(@Obj, '''', '''''') + N'''''
+  WITH RESULT SETS
+  (
+    (
+      [name] sysname,
+      [rows] char(11),
+      reserved varchar(18),
+      data varchar(18),
+      index_size varchar(18),
+      unused varchar(18)
     )
-FROM sys.columns c
-JOIN sys.types t ON c.user_type_id = t.user_type_id
-WHERE c.object_id = @ObjectID
-  AND c.name IN (
-        SELECT LTRIM(RTRIM(value))
-        FROM STRING_SPLIT(@KeyColumns, ',')
-    );
+  );'');';
 
--- estimación final
-SELECT 
-    @RowCount AS TotalRows,
-    @KeySizeBytes AS KeyBytesPerRow,
-    (@RowCount * @KeySizeBytes * 1.2) / 1024 / 1024 AS EstimatedIndexSizeMB;
+EXEC sys.sp_executesql @SQL;
+
+
+
+--sp sp_spaceused 
+DECLARE @Table1 SYSNAME = 'Person.Person';
+EXEC sp_spaceused @Table1;
