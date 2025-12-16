@@ -4,25 +4,25 @@ SELECT
     s.name AS SchemaName,
     t.name AS TableName,
 
-    -- Filas correctas
+    -- ROWS correctos
     SUM(CASE WHEN i.index_id IN (0,1) THEN p.rows ELSE 0 END) AS NumRows,
 
-    -- Reserved
+    -- RESERVED
     SUM(a.total_pages) * 8 AS ReservedKB,
 
-    -- DATA (igual a sp_spaceused)
+    -- DATA (heap o clustered)
     SUM(
         CASE 
-            WHEN a.type IN (1,2,3) THEN a.used_pages 
-            ELSE 0 
+            WHEN i.index_id IN (0,1) THEN a.used_pages
+            ELSE 0
         END
     ) * 8 AS DataKB,
 
-    -- INDEX (igual a sp_spaceused)
+    -- INDEX (nonclustered)
     SUM(
         CASE 
-            WHEN a.type NOT IN (1,2,3) THEN a.used_pages 
-            ELSE 0 
+            WHEN i.index_id > 1 THEN a.used_pages
+            ELSE 0
         END
     ) * 8 AS IndexKB,
 
