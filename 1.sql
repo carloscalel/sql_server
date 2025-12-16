@@ -1,99 +1,61 @@
-DECLARE @LinkedServer sysname = N'CALEL';
-DECLARE @DB          sysname = N'AdventureWorks2022';
+IF OBJECT_ID('tempdb..##TableSpaceAllDB') IS NOT NULL
+    DROP TABLE ##TableSpaceAllDB;
 
-DECLARE @RemoteBatch nvarchar(max) = N'
-SET NOCOUNT ON;
-
-DECLARE @spaceused TABLE
-(
-    [name]       sysname,
-    [rows]       char(11),
-    reserved     varchar(18),
-    data         varchar(18),
-    index_size   varchar(18),
-    unused       varchar(18)
+CREATE TABLE ##TableSpaceAllDB (
+    DatabaseName SYSNAME,
+    SchemaName SYSNAME,
+    TableName SYSNAME,
+    NumRows BIGINT,
+    ReservedKB BIGINT,
+    DataKB BIGINT,
+    IndexKB BIGINT,
+    UnusedKB BIGINT
 );
-
-DECLARE @report TABLE
-(
-    schema_name sysname NOT NULL,
-    table_name  sysname NOT NULL,
-    rows_count  bigint  NULL,
-    reserved_kb bigint  NULL,
-    data_kb     bigint  NULL,
-    index_kb    bigint  NULL,
-    unused_kb   bigint  NULL
-);
-
-DECLARE @tables TABLE
-(
-    id int IDENTITY(1,1) PRIMARY KEY,
-    schema_name sysname,
-    table_name  sysname
-);
-
-INSERT INTO @tables(schema_name, table_name)
-SELECT s.name, t.name
-FROM ' + @DB + '.sys.tables t
-JOIN ' + @DB + '.sys.schemas s ON s.schema_id = t.schema_id
-WHERE t.is_ms_shipped = 0
-ORDER BY s.name, t.name;
 
 DECLARE 
-    @i int = 1,
-    @max int,
-    @schema sysname,
-    @table sysname,
-    @obj nvarchar(600);
+    @DBName SYSNAME,
+    @SQL NVARCHAR(MAX);
 
-SELECT @max = MAX(id) FROM @tables;
+DECLARE db_cursor CURSOR LOCAL FAST_FORWARD FOR
+SELECT name
+FROM sys.databases
+WHERE database_id > 4
+  AND state_desc = 'ONLINE';
 
-WHILE @i <= @max
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @DBName;
+
+WHILE @@FETCH_STATUS = 0
 BEGIN
-    SELECT 
-        @schema = schema_name,
-        @table  = table_name
-    FROM @tables
-    WHERE id = @i;
+    SET @SQL = N'
+    USE [' + QUOTENAME(@DBName) + N'];
 
-    SET @obj = QUOTENAME(@schema) + N''.'' + QUOTENAME(@table);
-
-    DELETE FROM @spaceused;
-
-    INSERT INTO @spaceused
-    EXEC ' + @DB + '.sys.sp_spaceused 
-         @objname = @obj, 
-         @updateusage = ''FALSE'';
-
-    INSERT INTO @report(schema_name, table_name, rows_count, reserved_kb, data_kb, index_kb, unused_kb)
+    INSERT INTO ##TableSpaceAllDB
     SELECT
-        @schema,
-        @table,
-        TRY_CONVERT(bigint, LTRIM(RTRIM([rows]))),
-        TRY_CONVERT(bigint, REPLACE(reserved,   '' KB'','''')),
-        TRY_CONVERT(bigint, REPLACE(data,       '' KB'','''')),
-        TRY_CONVERT(bigint, REPLACE(index_size, '' KB'','''')),
-        TRY_CONVERT(bigint, REPLACE(unused,     '' KB'',''''))
-    FROM @spaceused;
+        DB_NAME() AS DatabaseName,
+        s.name AS SchemaName,
+        t.name AS TableName,
+        SUM(p.rows) AS NumRows,
+        SUM(a.total_pages) * 8 AS ReservedKB,
+        SUM(a.data_pages) * 8 AS DataKB,
+        (SUM(a.used_pages) - SUM(a.data_pages)) * 8 AS IndexKB,
+        (SUM(a.total_pages) - SUM(a.used_pages)) * 8 AS UnusedKB
+    FROM sys.tables t
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    JOIN sys.indexes i ON t.object_id = i.object_id
+    JOIN sys.partitions p 
+        ON i.object_id = p.object_id 
+       AND i.index_id = p.index_id
+    JOIN sys.allocation_units a 
+        ON p.partition_id = a.container_id
+    WHERE t.is_ms_shipped = 0
+    GROUP BY s.name, t.name;
+    ';
 
-    SET @i += 1;
-END;
+    EXEC sp_executesql @SQL;
 
-SELECT
-    CONCAT(schema_name, ''.'', table_name) AS [Name],
-    rows_count                             AS [Rows],
-    reserved_kb                            AS [Reserved],
-    data_kb                                AS [Data],
-    index_kb                               AS [Index_Size],
-    unused_kb                              AS [Unused]
-FROM @report
-ORDER BY reserved_kb DESC, Name;
-';
+    FETCH NEXT FROM db_cursor INTO @DBName;
+END
 
-DECLARE @OpenQuery nvarchar(max) =
-N'SELECT *
-  FROM OPENQUERY(' + QUOTENAME(@LinkedServer) + N', ''' + REPLACE(@RemoteBatch, '''', '''''') + N''');';
-
-EXEC sys.sp_executesql @OpenQuery;
-
-EXEC sp_spaceused 'Person.Person'
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
