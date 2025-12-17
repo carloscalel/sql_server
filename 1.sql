@@ -80,3 +80,17 @@ BEGIN
 
     SET @i += 1;
 END
+
+SELECT
+    DatabaseName,
+    SchemaName,
+    TableName,
+    NumRows,
+
+    ROUND(ReservedKB / 1024.0, 2) AS ReservedMB,
+    ROUND(DataKB     / 1024.0, 2) AS DataMB,
+    ROUND(IndexKB    / 1024.0, 2) AS IndexMB,
+    ROUND(UnusedKB   / 1024.0, 2) AS UnusedMB
+
+FROM ##TableSpaceAllDB
+ORDER BY ReservedKB DESC;
