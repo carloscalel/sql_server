@@ -1,3 +1,17 @@
+IF OBJECT_ID('tempdb..#Databases') IS NOT NULL
+    DROP TABLE #Databases;
+
+CREATE TABLE #Databases (
+    RowNum INT IDENTITY(1,1),
+    DBName SYSNAME
+);
+
+INSERT INTO #Databases (DBName)
+SELECT name
+FROM sys.databases
+WHERE database_id > 4
+  AND state_desc = 'ONLINE';
+
 DECLARE 
     @i INT = 1,
     @max INT,
