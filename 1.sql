@@ -1,96 +1,46 @@
-IF OBJECT_ID('tempdb..#Databases') IS NOT NULL
-    DROP TABLE #Databases;
-
-CREATE TABLE #Databases (
-    RowNum INT IDENTITY(1,1),
-    DBName SYSNAME
-);
-
-INSERT INTO #Databases (DBName)
-SELECT name
-FROM sys.databases
-WHERE database_id > 4
-  AND state_desc = 'ONLINE';
-
-DECLARE 
-    @i INT = 1,
-    @max INT,
-    @DBName SYSNAME,
-    @SQL NVARCHAR(MAX);
-
-SELECT @max = MAX(RowNum) FROM #Databases;
-
-WHILE @i <= @max
+CREATE OR ALTER PROCEDURE dbo.usp_Queue_TakeNext
+    @WorkerName NVARCHAR(128)
+AS
 BEGIN
-    SELECT @DBName = DBName
-    FROM #Databases
-    WHERE RowNum = @i;
+    SET NOCOUNT ON;
 
-    SET @SQL = N'
-    USE ' + QUOTENAME(@DBName) + N';
+    DECLARE @runDate DATE;
 
-    INSERT INTO ##TableSpaceAllDB
-    SELECT
-        DB_NAME() AS DatabaseName,
-        s.name AS SchemaName,
-        t.name AS TableName,
+    -- Tomar la fecha más antigua pendiente
+    SELECT TOP (1) @runDate = RunDate
+    FROM dbo.ExecutionQueue
+    WHERE Status IN ('PENDING','ERROR')
+    ORDER BY RunDate ASC;
 
-        -- ROWS (igual a sp_spaceused)
-        SUM(CASE WHEN i.index_id IN (0,1) THEN p.rows ELSE 0 END) AS NumRows,
+    IF @runDate IS NULL
+        RETURN;
 
-        -- RESERVED
-        SUM(a.total_pages) * 8 AS ReservedKB,
-
-        -- DATA (heap + clustered)
-        SUM(
-            CASE 
-                WHEN i.index_id IN (0,1) 
-                THEN a.used_pages 
-                ELSE 0 
-            END
-        ) * 8 AS DataKB,
-
-        -- INDEX (nonclustered)
-        SUM(
-            CASE 
-                WHEN i.index_id > 1 
-                THEN a.used_pages 
-                ELSE 0 
-            END
-        ) * 8 AS IndexKB,
-
-        -- UNUSED
-        SUM(a.total_pages - a.used_pages) * 8 AS UnusedKB
-
-    FROM sys.tables t
-    JOIN sys.schemas s 
-        ON t.schema_id = s.schema_id
-    JOIN sys.indexes i 
-        ON t.object_id = i.object_id
-    JOIN sys.partitions p
-        ON i.object_id = p.object_id
-       AND i.index_id  = p.index_id
-    JOIN sys.allocation_units a
-        ON p.partition_id = a.container_id
-    WHERE t.is_ms_shipped = 0
-    GROUP BY s.name, t.name;
-    ';
-
-    EXEC sp_executesql @SQL;
-
-    SET @i += 1;
+    ;WITH nextItem AS
+    (
+        SELECT TOP (1)
+               q.QueueId
+        FROM dbo.ExecutionQueue q
+        INNER JOIN dbo.ScriptsCatalog c ON c.ScriptId = q.ScriptId
+        WHERE q.RunDate = @runDate
+          AND q.Status IN ('PENDING','ERROR')
+          AND q.Attempts < q.MaxAttempts
+          AND c.IsActive = 1
+        ORDER BY c.Priority ASC, q.QueueId ASC
+    )
+    UPDATE q
+        SET q.Status   = 'RUNNING',
+            q.LockedBy = @WorkerName,
+            q.LockedAt = SYSDATETIME(),
+            q.Attempts = q.Attempts + 1
+    OUTPUT
+        inserted.QueueId,
+        inserted.ScriptId,
+        c.ScriptName,
+        c.TargetDatabase,
+        c.CommandText,
+        c.CommandTimeoutSec,
+        inserted.RunDate
+    FROM dbo.ExecutionQueue q
+    INNER JOIN nextItem n ON n.QueueId = q.QueueId
+    INNER JOIN dbo.ScriptsCatalog c ON c.ScriptId = q.ScriptId;
 END
-
-SELECT
-    DatabaseName,
-    SchemaName,
-    TableName,
-    NumRows,
-
-    ROUND(ReservedKB / 1024.0, 2) AS ReservedMB,
-    ROUND(DataKB     / 1024.0, 2) AS DataMB,
-    ROUND(IndexKB    / 1024.0, 2) AS IndexMB,
-    ROUND(UnusedKB   / 1024.0, 2) AS UnusedMB
-
-FROM ##TableSpaceAllDB
-ORDER BY ReservedKB DESC;
