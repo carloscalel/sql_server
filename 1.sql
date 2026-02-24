@@ -1,46 +1,60 @@
-CREATE OR ALTER PROCEDURE dbo.usp_Queue_TakeNext
-    @WorkerName NVARCHAR(128)
-AS
-BEGIN
-    SET NOCOUNT ON;
+else if (opcion == "6")
+{
+    Console.Write("Ingresa la ruta completa del archivo TXT: ");
+    string rutaArchivo = Console.ReadLine()?.Trim();
 
-    DECLARE @runDate DATE;
+    if (string.IsNullOrEmpty(rutaArchivo) || !File.Exists(rutaArchivo))
+    {
+        Console.WriteLine("Archivo no válido o no existe.");
+        return;
+    }
 
-    -- Tomar la fecha más antigua pendiente
-    SELECT TOP (1) @runDate = RunDate
-    FROM dbo.ExecutionQueue
-    WHERE Status IN ('PENDING','ERROR')
-    ORDER BY RunDate ASC;
+    Console.Write("¿Deseas exportar solo .dtsx? (s/n): ");
+    bool soloDtsx = Console.ReadLine()?.Trim().ToLower() == "s";
 
-    IF @runDate IS NULL
-        RETURN;
+    var lineas = File.ReadAllLines(rutaArchivo)
+                      .Where(l => !string.IsNullOrWhiteSpace(l))
+                      .ToList();
 
-    ;WITH nextItem AS
-    (
-        SELECT TOP (1)
-               q.QueueId
-        FROM dbo.ExecutionQueue q
-        INNER JOIN dbo.ScriptsCatalog c ON c.ScriptId = q.ScriptId
-        WHERE q.RunDate = @runDate
-          AND q.Status IN ('PENDING','ERROR')
-          AND q.Attempts < q.MaxAttempts
-          AND c.IsActive = 1
-        ORDER BY c.Priority ASC, q.QueueId ASC
-    )
-    UPDATE q
-        SET q.Status   = 'RUNNING',
-            q.LockedBy = @WorkerName,
-            q.LockedAt = SYSDATETIME(),
-            q.Attempts = q.Attempts + 1
-    OUTPUT
-        inserted.QueueId,
-        inserted.ScriptId,
-        c.ScriptName,
-        c.TargetDatabase,
-        c.CommandText,
-        c.CommandTimeoutSec,
-        inserted.RunDate
-    FROM dbo.ExecutionQueue q
-    INNER JOIN nextItem n ON n.QueueId = q.QueueId
-    INNER JOIN dbo.ScriptsCatalog c ON c.ScriptId = q.ScriptId;
-END
+    foreach (var linea in lineas)
+    {
+        try
+        {
+            var partes = linea.Split('|');
+
+            if (partes.Length != 2)
+            {
+                Console.WriteLine($"Formato inválido: {linea}");
+                continue;
+            }
+
+            string folderName = partes[0].Trim();
+            string projectName = partes[1].Trim();
+
+            var folder = catalog.Folders[folderName];
+
+            if (folder == null)
+            {
+                Console.WriteLine($"Carpeta no encontrada: {folderName}");
+                continue;
+            }
+
+            var project = folder.Projects[projectName];
+
+            if (project == null)
+            {
+                Console.WriteLine($"Proyecto no encontrado: {projectName}");
+                continue;
+            }
+
+            if (soloDtsx)
+                ExportarSoloDtsx(project, baseOutputDir, folderName);
+            else
+                ExportarProyecto(project, baseOutputDir, folderName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error procesando línea '{linea}': {ex.Message}");
+        }
+    }
+}
