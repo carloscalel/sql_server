@@ -1,224 +1,102 @@
-SET NOCOUNT ON;
+using System;
+using System.IO;
+using System.Net.Mail;
+using Microsoft.Data.SqlClient;
 
-DECLARE @SampleSeconds INT = 10;
-DECLARE @StartTime DATETIME2(3) = SYSDATETIME();
-DECLARE @ElapsedSeconds DECIMAL(18,3);
+namespace SqlHealthReporter
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("=== Iniciando Ejecución de Reportes SQL ===");
 
-DECLARE
-    @BatchRequests0 BIGINT,
-    @BatchRequests1 BIGINT,
-    @Transactions0 BIGINT,
-    @Transactions1 BIGINT;
+            // 1. Configuración de Rutas y Servidores
+            string rutaScript = @"C:\Scripts\EstadoSalud.sql"; // Ruta local en el Servidor A
+            
+            // Aquí puedes agregar todos los servidores a los que el Servidor A se conectará
+            string[] servidoresDestino = { "InstanciaSQL_01", "InstanciaSQL_02" };
 
--- =========================================================
--- 1. Primera muestra de contadores
--- =========================================================
-SELECT @BatchRequests0 = cntr_value
-FROM sys.dm_os_performance_counters
-WHERE object_name LIKE '%:SQL Statistics%'
-  AND counter_name = 'Batch Requests/sec';
+            // Configuración del Servidor B (Correo)
+            string smtpHost = "IP_O_NOMBRE_SERVIDOR_B"; 
+            int smtpPort = 25; 
+            string correoRemitente = "alertas_sql@tuempresa.com";
+            string correoDestino = "dba@tuempresa.com";
 
-SELECT @Transactions0 = cntr_value
-FROM sys.dm_os_performance_counters
-WHERE object_name LIKE '%:Databases%'
-  AND counter_name = 'Transactions/sec'
-  AND instance_name = '_Total';
+            // 2. Validar que el archivo .sql exista
+            if (!File.Exists(rutaScript))
+            {
+                Console.WriteLine($"[CRÍTICO] No se encontró el archivo de script en: {rutaScript}");
+                return;
+            }
 
--- =========================================================
--- 2. Primera muestra de I/O
--- =========================================================
-DROP TABLE IF EXISTS #IO_Start;
+            string sqlScript = File.ReadAllText(rutaScript);
 
-SELECT
-    database_id,
-    file_id,
-    num_of_reads,
-    num_of_writes,
-    num_of_bytes_read,
-    num_of_bytes_written,
-    io_stall_read_ms,
-    io_stall_write_ms
-INTO #IO_Start
-FROM sys.dm_io_virtual_file_stats(NULL, NULL);
+            // 3. Iterar por cada servidor de la lista
+            foreach (var servidor in servidoresDestino)
+            {
+                Console.WriteLine($"\n-> Conectando a {servidor}...");
+                
+                string connectionString = $"Server={servidor};Database=master;Trusted_Connection=True;TrustServerCertificate=True;";
+                string htmlGenerado = string.Empty;
 
--- =========================================================
--- 3. Intervalo de medición
--- =========================================================
-WAITFOR DELAY '00:00:10';
+                try
+                {
+                    // Ejecutar el script y recuperar el HTML
+                    using (SqlConnection conexion = new SqlConnection(connectionString))
+                    {
+                        conexion.Open();
+                        using (SqlCommand comando = new SqlCommand(sqlScript, conexion))
+                        {
+                            comando.CommandTimeout = 600; // 10 minutos de timeout
+                            
+                            using (SqlDataReader reader = comando.ExecuteReader())
+                            {
+                                if (reader.Read())
+                                {
+                                    // Lee la columna generada en la línea 239 de tu script
+                                    htmlGenerado = reader["Executive_HTML"].ToString(); 
+                                }
+                            }
+                        }
+                    }
 
-SET @ElapsedSeconds =
-    DATEDIFF_BIG(MILLISECOND, @StartTime, SYSDATETIME()) / 1000.0;
+                    // Enviar el correo usando el Servidor B
+                    if (!string.IsNullOrEmpty(htmlGenerado))
+                    {
+                        string asunto = $"Estado de Salud SQL Server - {servidor} - {DateTime.Now:dd/MM/yyyy}";
+                        EnviarCorreo(smtpHost, smtpPort, correoRemitente, correoDestino, asunto, htmlGenerado);
+                        Console.WriteLine($"[ÉXITO] Reporte generado y enviado correctamente para {servidor}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[ADVERTENCIA] El script se ejecutó en {servidor} pero no devolvió HTML.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Fallo procesando el servidor {servidor}: {ex.Message}");
+                }
+            }
 
--- =========================================================
--- 4. Segunda muestra de contadores
--- =========================================================
-SELECT @BatchRequests1 = cntr_value
-FROM sys.dm_os_performance_counters
-WHERE object_name LIKE '%:SQL Statistics%'
-  AND counter_name = 'Batch Requests/sec';
+            Console.WriteLine("\n=== Proceso finalizado ===");
+        }
 
-SELECT @Transactions1 = cntr_value
-FROM sys.dm_os_performance_counters
-WHERE object_name LIKE '%:Databases%'
-  AND counter_name = 'Transactions/sec'
-  AND instance_name = '_Total';
+        static void EnviarCorreo(string host, int port, string de, string para, string asunto, string cuerpoHtml)
+        {
+            using (MailMessage mail = new MailMessage(de, para))
+            {
+                mail.Subject = asunto;
+                mail.Body = cuerpoHtml;
+                mail.IsBodyHtml = true;
 
-DROP TABLE IF EXISTS #IO_End;
-
-SELECT
-    database_id,
-    file_id,
-    num_of_reads,
-    num_of_writes,
-    num_of_bytes_read,
-    num_of_bytes_written,
-    io_stall_read_ms,
-    io_stall_write_ms
-INTO #IO_End
-FROM sys.dm_io_virtual_file_stats(NULL, NULL);
-
--- =========================================================
--- 5. Throughput medido
--- =========================================================
-SELECT
-    @ElapsedSeconds AS Sample_Seconds,
-
-    CAST(
-        (@BatchRequests1 - @BatchRequests0)
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Batch_Requests_Per_Second,
-
-    CAST(
-        (@Transactions1 - @Transactions0)
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Transactions_Per_Second_Total,
-
-    (
-        SELECT COUNT(*)
-        FROM sys.dm_os_schedulers
-        WHERE status = 'VISIBLE ONLINE'
-    ) AS Logical_Schedulers,
-
-    (
-        SELECT COUNT(DISTINCT parent_node_id)
-        FROM sys.dm_os_schedulers
-        WHERE status = 'VISIBLE ONLINE'
-    ) AS NUMA_Nodes,
-
-    (
-        SELECT CAST(value_in_use AS INT)
-        FROM sys.configurations
-        WHERE name = 'max degree of parallelism'
-    ) AS MaxDOP_Configured,
-
-    (
-        SELECT SUM(runnable_tasks_count)
-        FROM sys.dm_os_schedulers
-        WHERE status = 'VISIBLE ONLINE'
-    ) AS Runnable_Tasks_Total,
-
-    (
-        SELECT MAX(runnable_tasks_count)
-        FROM sys.dm_os_schedulers
-        WHERE status = 'VISIBLE ONLINE'
-    ) AS Runnable_Tasks_Max_Per_Scheduler;
-
--- =========================================================
--- 6. Memoria
--- =========================================================
-SELECT
-    osi.total_physical_memory_kb / 1024 AS OS_Total_Memory_MB,
-    osm.available_physical_memory_kb / 1024 AS OS_Available_Memory_MB,
-
-    osi.committed_kb / 1024 AS SQL_Committed_Memory_MB,
-    osi.committed_target_kb / 1024 AS SQL_Target_Memory_MB,
-
-    opm.physical_memory_in_use_kb / 1024 AS SQL_Process_Memory_MB,
-    opm.process_physical_memory_low,
-    opm.process_virtual_memory_low
-FROM sys.dm_os_sys_info AS osi
-CROSS JOIN sys.dm_os_sys_memory AS osm
-CROSS JOIN sys.dm_os_process_memory AS opm;
-
--- =========================================================
--- 7. PLE global y por nodo NUMA
--- =========================================================
-SELECT
-    object_name,
-    CASE
-        WHEN instance_name = '' THEN 'Overall'
-        ELSE instance_name
-    END AS NUMA_Node,
-    cntr_value AS Page_Life_Expectancy_Seconds
-FROM sys.dm_os_performance_counters
-WHERE counter_name = 'Page life expectancy'
-  AND (
-        object_name LIKE '%:Buffer Manager%'
-        OR object_name LIKE '%:Buffer Node%'
-      )
-ORDER BY object_name, instance_name;
-
--- =========================================================
--- 8. IOPS, throughput y latencia por archivo
--- =========================================================
-SELECT
-    DB_NAME(e.database_id) AS Database_Name,
-    mf.type_desc AS File_Type,
-    mf.name AS Logical_File_Name,
-    mf.physical_name,
-
-    CAST(
-        (e.num_of_reads - s.num_of_reads)
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Read_IOPS,
-
-    CAST(
-        (e.num_of_writes - s.num_of_writes)
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Write_IOPS,
-
-    CAST(
-        (e.num_of_bytes_read - s.num_of_bytes_read)
-        / 1048576.0
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Read_MB_Per_Second,
-
-    CAST(
-        (e.num_of_bytes_written - s.num_of_bytes_written)
-        / 1048576.0
-        / NULLIF(@ElapsedSeconds, 0)
-        AS DECIMAL(18,2)
-    ) AS Write_MB_Per_Second,
-
-    CAST(
-        (e.io_stall_read_ms - s.io_stall_read_ms) * 1.0
-        / NULLIF(e.num_of_reads - s.num_of_reads, 0)
-        AS DECIMAL(18,2)
-    ) AS Average_Read_Latency_ms,
-
-    CAST(
-        (e.io_stall_write_ms - s.io_stall_write_ms) * 1.0
-        / NULLIF(e.num_of_writes - s.num_of_writes, 0)
-        AS DECIMAL(18,2)
-    ) AS Average_Write_Latency_ms
-
-FROM #IO_End AS e
-INNER JOIN #IO_Start AS s
-    ON s.database_id = e.database_id
-   AND s.file_id = e.file_id
-INNER JOIN sys.master_files AS mf
-    ON mf.database_id = e.database_id
-   AND mf.file_id = e.file_id
-WHERE
-    e.num_of_reads > s.num_of_reads
-    OR e.num_of_writes > s.num_of_writes
-ORDER BY
-    (
-        (e.num_of_reads - s.num_of_reads)
-        + (e.num_of_writes - s.num_of_writes)
-    ) DESC;
+                using (SmtpClient smtp = new SmtpClient(host, port))
+                {
+                    // Configuración básica para un servidor de correo interno (Relay)
+                    smtp.UseDefaultCredentials = true; 
+                    smtp.Send(mail);
+                }
+            }
+        }
+    }
+}
