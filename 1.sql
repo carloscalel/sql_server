@@ -110,3 +110,28 @@ namespace SqlHealthReporter
         }
     }
 }
+
+
+
+
+
+{
+  "Configuracion": {
+    "RutaScript": "C:\\Scripts\\EstadoSalud.sql",
+    "ServidoresDestino": [
+      "InstanciaSQL_01",
+      "InstanciaSQL_02",
+      "InstanciaSQL_03"
+    ]
+  },
+  "Correo": {
+    "SmtpHost": "192.168.1.50",
+    "SmtpPort": 25,
+    "Remitente": "alertas_sql@tuempresa.com",
+    "Destinatarios": [
+      "dba_principal@tuempresa.com",
+      "soporte_bd@tuempresa.com",
+      "gerencia_ti@tuempresa.com"
+    ]
+  }
+}
